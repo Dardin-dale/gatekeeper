@@ -33,6 +33,11 @@ lib/games/
 
 - **EC2 + Docker** runs the game server. The data volume is a separate **RETAIN'd EBS volume**, so
   worlds survive instance replacement and stop/start.
+- ⚠️ **Instance-replacing changes (AMI, instance type, user-data) MUST bump `DeploymentVersion`**
+  (two spots in `game-server-stack.ts`: the VolumeDetachResource property + the instance tag).
+  The volume-detach custom resource only runs when that property changes — without the bump,
+  CFN tries to attach the still-attached data volume to the new instance and the deploy
+  fails/rolls back with "volume already attached".
 - **Profile-driven runtime**: `game-server.service` → `scripts/game/start-server.sh` reads
   `game-profile.json` + the active world from SSM and issues the `docker run`. `game-monitor.service`
   → `scripts/game/monitor.sh` queries **Steam A2S on localhost** for player count + liveness, writes

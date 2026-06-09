@@ -468,7 +468,7 @@ EOF`,
             properties: {
                 VolumeId: dataVolume.ref,
                 // Trigger update when deployment version changes
-                DeploymentVersion: '2026-05-19-v1',
+                DeploymentVersion: '2026-06-09-v2',
             },
         });
 
@@ -498,7 +498,7 @@ EOF`,
         });
 
         // Add deployment version tag to force replacement when needed
-        Tags.of(this.ec2Instance).add('DeploymentVersion', '2026-05-19-v1');
+        Tags.of(this.ec2Instance).add('DeploymentVersion', '2026-06-09-v2');
 
         // Ensure volume is detached from old instances before new instance is created
         this.ec2Instance.node.addDependency(volumeDetach);
