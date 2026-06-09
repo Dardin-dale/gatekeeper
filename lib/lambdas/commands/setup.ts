@@ -1,84 +1,49 @@
 import { APIGatewayProxyResult } from "aws-lambda";
 import {
-  StartInstancesCommand,
-  StopInstancesCommand,
-} from "@aws-sdk/client-ec2";
-import {
   GetParameterCommand,
   PutParameterCommand,
-  DeleteParameterCommand,
-  SendCommandCommand,
 } from "@aws-sdk/client-ssm";
-import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import {
-  ec2Client,
   ssmClient,
-  s3Client,
   withRetry,
-  SERVER_INSTANCE_ID,
-  BACKUP_BUCKET_NAME,
   SSM_PARAMS,
-  getGuildDefaultWorldParam,
-  getInstanceStatus,
-  getStatusMessage,
-  getFastServerStatus,
 } from "../utils/aws-clients";
-import {
-  createSuccessResponse,
-  createBadRequestResponse,
-  createErrorResponse,
-} from "../utils/responses";
-import {
-  WORLD_CONFIGS,
-  WorldConfig,
-  validateWorldConfig,
-} from "../utils/world-config";
-import { sendFollowUpMessage } from "../utils/discord-followup";
 import { InteractionResponseType } from "./types";
 import { persona, personaEmbed } from "./util/persona";
 
-export async function handleSetupCommand(interaction: any): Promise<APIGatewayProxyResult> {
-  const { guild_id, channel_id, member, application_id, token } = interaction;
+// NOTE: all work happens INLINE before returning. Lambda freezes the execution
+// environment the moment the handler returns, so a fire-and-forget deferred
+// pattern silently never runs (that bug shipped in v1's first deploy). The few
+// calls here — one SSM read, one Discord webhook create, one SSM write, one
+// webhook test post — fit comfortably inside Discord's 3-second response window.
 
-  // Check if user has permissions (manage webhooks) - do this immediately
+const respond = (data: Record<string, unknown>): APIGatewayProxyResult => ({
+  statusCode: 200,
+  body: JSON.stringify({
+    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+    data,
+  }),
+});
+
+export async function handleSetupCommand(interaction: any): Promise<APIGatewayProxyResult> {
+  const { guild_id, channel_id, member } = interaction;
+
+  // Check if user has permissions (manage webhooks)
   const permissions = BigInt(member.permissions);
   const MANAGE_WEBHOOKS = BigInt(1 << 29);
-  
+
   if (!(permissions & MANAGE_WEBHOOKS)) {
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-        data: {
-          content: '❌ You need "Manage Webhooks" permission to use this command.',
-          flags: 64, // Ephemeral
-        },
-      }),
-    };
+    return respond({
+      content: '❌ You need "Manage Webhooks" permission to use this command.',
+      flags: 64, // Ephemeral
+    });
   }
-
-  // Send deferred response immediately after permission check
-  const deferredResponse = {
-    statusCode: 200,
-    body: JSON.stringify({
-      type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
-    }),
-  };
-
-  // Perform the actual work asynchronously
-  handleSetupCommandAsync(guild_id, channel_id, application_id, token).catch(error => {
-    console.error('Error in handleSetupCommandAsync:', error);
-  });
-
-  return deferredResponse;
-}
-export async function handleSetupCommandAsync(guild_id: string, channel_id: string, application_id: string, token: string): Promise<void> {
 
   try {
     // Check if a webhook already exists for this guild
     const existingWebhookParam = `${SSM_PARAMS.DISCORD_WEBHOOK}/${guild_id}`;
-    let existingWebhook = null;
-    
+    let existingWebhook: string | undefined;
+
     try {
       const result = await withRetry(() => ssmClient.send(new GetParameterCommand({
         Name: existingWebhookParam,
@@ -98,16 +63,15 @@ export async function handleSetupCommandAsync(guild_id: string, channel_id: stri
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             content: '✅ Webhook is already configured and working!',
-            username: persona.botName
+            username: persona.characterName,
           }),
         });
 
         if (testResponse.ok) {
-          await sendFollowUpMessage(application_id, token, {
-            content: '✅ This server already has notifications configured!',
+          return respond({
             embeds: [personaEmbed({
               title: '📢 Notifications Active',
-              description: `${persona.botName} is already set up to send notifications to this channel.`,
+              description: `${persona.botName} is already set up to send notifications in this server.`,
               extra: {
                 fields: [{
                   name: 'Need to change channels?',
@@ -117,7 +81,6 @@ export async function handleSetupCommandAsync(guild_id: string, channel_id: stri
               },
             })],
           });
-          return;
         }
       } catch (err) {
         console.log('Existing webhook is no longer valid, creating new one');
@@ -125,54 +88,43 @@ export async function handleSetupCommandAsync(guild_id: string, channel_id: stri
     }
 
     // Create a new webhook using Discord's API
-    const webhookName = `${persona.botName} Notifications`;
-    const createWebhookUrl = `https://discord.com/api/v10/channels/${channel_id}/webhooks`;
-
-    console.log('Creating webhook for channel:', channel_id);
-
-    // Make the API call to create a webhook
     const botToken = process.env.DISCORD_BOT_TOKEN;
-    
     if (!botToken) {
       console.error('DISCORD_BOT_TOKEN not configured');
-      await sendFollowUpMessage(application_id, token, {
+      return respond({
         content: '❌ Bot configuration error: Missing bot token. Please contact the administrator.',
         flags: 64,
       });
-      return;
     }
 
-    const createResponse = await fetch(createWebhookUrl, {
+    console.log('Creating webhook for channel:', channel_id);
+    const createResponse = await fetch(`https://discord.com/api/v10/channels/${channel_id}/webhooks`, {
       method: 'POST',
       headers: {
         'Authorization': `Bot ${botToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        name: webhookName,
-        avatar: null, // You can add a base64 encoded image here if you want
+        name: `${persona.botName} Notifications`,
+        avatar: null,
       }),
     });
 
     if (!createResponse.ok) {
-      const errorData = await createResponse.json();
-      console.error('Failed to create webhook:', errorData);
-      
-      // Check if it's a permissions issue
+      const errorData: any = await createResponse.json().catch(() => ({}));
+      console.error('Failed to create webhook:', createResponse.status, errorData);
+
       if (createResponse.status === 403) {
-        await sendFollowUpMessage(application_id, token, {
+        return respond({
           content: '❌ I don\'t have permission to create webhooks in this channel. Please ensure I have the "Manage Webhooks" permission.',
           flags: 64,
         });
-        return;
       }
-      
-      throw new Error(`Failed to create webhook: ${errorData.message || 'Unknown error'}`);
+      throw new Error(`Failed to create webhook: ${errorData.message || `HTTP ${createResponse.status}`}`);
     }
 
-    const webhookData = await createResponse.json();
+    const webhookData: any = await createResponse.json();
     const webhookUrl = `https://discord.com/api/webhooks/${webhookData.id}/${webhookData.token}`;
-
     console.log('Webhook created successfully:', webhookData.id);
 
     // Store the webhook URL in SSM
@@ -184,12 +136,13 @@ export async function handleSetupCommandAsync(guild_id: string, channel_id: stri
       Description: `Discord webhook for guild ${guild_id} in channel ${channel_id}`,
     })));
 
-    // Send a test message through the webhook
+    // Send a test message through the webhook (proves the notification path live)
     await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        username: persona.botName,
+        username: persona.characterName,
+        ...(persona.thumbnailUrl ? { avatar_url: persona.thumbnailUrl } : {}),
         embeds: [personaEmbed({
           title: '🎉 Webhook Created Successfully!',
           description: 'I\'ll send server notifications to this channel.',
@@ -212,8 +165,7 @@ export async function handleSetupCommandAsync(guild_id: string, channel_id: stri
       }),
     });
 
-    await sendFollowUpMessage(application_id, token, {
-      content: '✅ Setup complete! Check the message above.',
+    return respond({
       embeds: [personaEmbed({
         title: '✨ Notifications Configured',
         description: `${persona.botName} will now send server updates to this channel.`,
@@ -222,8 +174,7 @@ export async function handleSetupCommandAsync(guild_id: string, channel_id: stri
 
   } catch (error) {
     console.error('Error in setup command:', error);
-    await sendFollowUpMessage(application_id, token, {
-      content: '❌ Failed to set up notifications. Please try again or create a webhook manually.',
+    return respond({
       embeds: [personaEmbed({
         title: '⚠️ Setup Failed',
         description: `Error: ${error instanceof Error ? error.message : String(error)}`,
@@ -241,4 +192,3 @@ export async function handleSetupCommandAsync(guild_id: string, channel_id: stri
     });
   }
 }
-

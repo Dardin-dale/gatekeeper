@@ -18,8 +18,32 @@ Deploy the GATEKeeper stack for the active game (`GAME`, default `abiotic-factor
    ```
    To target a different game: `source .env && GAME=valheim npm run deploy`.
 
-4. Report the outputs: `InstanceId`, `ApiEndpoint` (set this as the Discord Interactions Endpoint
-   URL), `BackupBucketName`, and `CustomDomain` (if `BASE_DOMAIN` is set).
+4. Report the outputs: `InstanceId`, `ApiEndpoint`, `BackupBucketName`, and `CustomDomain` (if
+   `BASE_DOMAIN` is set).
+
+## Post-deploy: wire Discord (commands don't work until ALL of these are done)
+
+1. **Interactions Endpoint URL** — in the Developer Portal (General Information), set it to the
+   `ApiEndpoint` output **plus `interactions/control`**:
+   `https://<api-id>.execute-api.<region>.amazonaws.com/prod/interactions/control`
+   Discord PING-validates on save; a green save means the Lambda verified the signature.
+2. **Register commands:** `npm run register-commands` (global commands can take up to ~1 hr to appear).
+3. **Invite the bot** (once per server): the invite URL is printed by `register-commands`
+   (scopes `bot applications.commands`, permissions `536873984` = View Channels + Send Messages +
+   Manage Webhooks).
+4. **In Discord:** `/gate hail` (works with no server) → `/gate setup` in the notifications channel.
+
+### Troubleshooting "The application did not respond"
+
+- **Zero invocations in the commands Lambda's CloudWatch logs** → Discord is not calling us at all:
+  the Interactions Endpoint URL was never saved, or lacks the `/interactions/control` path.
+- Probe the route directly: `curl -X POST <ApiEndpoint>interactions/control -H 'Content-Type:
+  application/json' -d '{"type":1}'` — a `401 {"error":"Unauthorized"}` means API Gateway → Lambda →
+  signature check are all healthy (unsigned requests are *supposed* to 401).
+- **Portal refuses to save the URL** → public-key mismatch: the app's Public Key must equal the
+  deploy-time `DISCORD_BOT_PUBLIC_KEY` (`.env` or `config/<game>.discord.json`). Fix and redeploy.
+- Lambda logs live at `/aws/lambda/<stack>-CommandsFunction...` (find the name via
+  `aws cloudformation describe-stack-resources --stack-name GateStack-<Game>`).
 
 ## Notes
 
