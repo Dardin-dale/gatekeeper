@@ -77,8 +77,16 @@ while true; do
   NOW=$(date +%s)
 
   # --- A2S query (liveness + player count) ---
+  # Query the container's bridge IP directly: Docker's published-UDP-port
+  # forwarding is unreliable over loopback (docker-proxy/conntrack mangles the
+  # reply path), so 127.0.0.1:<port> can stay dead while the server is fully
+  # live externally. Host -> container-IP has no proxy in the path. Resolved
+  # every cycle since the IP can change when the container restarts.
+  TARGET_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+    "$CONTAINER_NAME" 2>/dev/null)
+  [ -z "$TARGET_IP" ] && TARGET_IP=127.0.0.1
   PLAYERS=0; LIVE=false
-  if OUT=$(node "$A2S" 127.0.0.1 "$QUERY_PORT" 4000 2>/dev/null); then
+  if OUT=$(node "$A2S" "$TARGET_IP" "$QUERY_PORT" 4000 2>/dev/null); then
     LIVE=true
     PLAYERS=$(echo "$OUT" | sed 's/^LIVE //' | jq -r '.players // 0' 2>/dev/null)
     [[ "$PLAYERS" =~ ^[0-9]+$ ]] || PLAYERS=0

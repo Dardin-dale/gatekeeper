@@ -58,7 +58,9 @@ export async function buildJoinFields(host: string): Promise<EmbedField[]> {
   }
 
   return [
-    { name: "🌐 Address", value: copyable(host), inline: true },
+    // Full-width: domains don't fit Discord's narrow 3-per-row inline fields
+    // without ugly wrapping inside the code block.
+    { name: "🌐 Address", value: copyable(host), inline: false },
     { name: "🔌 Port", value: copyable(ACTIVE_GAME.join.port), inline: true },
     // Spoiler-wrapped so screenshots/streams don't leak it — click to reveal.
     ...(password ? [{ name: "🔑 Password", value: `||${copyable(password)}||`, inline: true }] : []),
