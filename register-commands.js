@@ -73,7 +73,8 @@ async function registerCommands() {
     console.log('4. Use /setup in a Discord channel to configure notifications');
     console.log('');
     console.log('🔗 Bot invite URL (if needed):');
-    console.log(`https://discord.com/api/oauth2/authorize?client_id=${appId}&permissions=536871936&scope=bot%20applications.commands`);
+    // 536873984 = View Channels (1024) + Send Messages (2048) + Manage Webhooks (536870912)
+    console.log(`https://discord.com/api/oauth2/authorize?client_id=${appId}&permissions=536873984&scope=bot%20applications.commands`);
     
   } catch (error) {
     console.error('❌ Failed to register Discord commands:', error);

@@ -106,6 +106,11 @@ no always-on EventBridge.
       rotated huginbot's `worlds/` prefix — i.e. rotation NEVER ran against `backups/<game-id>/` —
       and removed the dead `worldBootstrapLocation` first-boot user-data seam it replaces.
 - [ ] Optional: refresh the remaining secondary setup guides (`aws-setup`, `troubleshooting`).
+- [ ] **Legacy API naming cleanup** — the REST API construct is still `HuginbotApi` (shows up as the
+      `HuginbotApiEndpoint...` stack output) with display name "HuginBot Discord API". The
+      `restApiName` *property* is safe to change in place, but renaming the *construct ID* REPLACES
+      the API Gateway → new endpoint URL → re-wire the Discord Interactions Endpoint URL after.
+      Do it alongside some other instance-replacing change, not casually.
 - [ ] **Real deploy** (`npm run deploy`) → set Discord Interactions Endpoint → `/gate setup` → `/gate start`
       → connect from the AF client → confirm idle auto-shutdown.
 
