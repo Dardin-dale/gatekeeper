@@ -37,7 +37,16 @@ export const valheim: GameProfile = {
 
   // Valheim answers A2S on its query port (2457) like any Steam server, so the
   // generic poller monitors it; only its crossplay join CODE is the carve-out.
-  join: { type: 'join-code', logPattern: '(with|has|that has) join code' },
+  // In practice players save the server once and reuse it: Steam → View →
+  // Game Servers → Favorites with <domain>:2457 remembers the password after
+  // the first join — the derived domain makes that favorite stable.
+  join: {
+    type: 'join-code',
+    logPattern: '(with|has|that has) join code',
+    hint: 'Save the server in Steam favorites (View → Game Servers → Favorites) using its address — ' +
+      'Steam remembers the password after the first join. Or use the crossplay join code posted ' +
+      'here when the server comes online.',
+  },
 
   persona: {
     botName: 'HuginBot',

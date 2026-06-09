@@ -100,10 +100,16 @@ export interface PortRange {
   to: number;
 }
 
-/** Join info: a plain host:port address, or a game-specific join code from logs. */
+/**
+ * Join info: a plain host:port address, or a game-specific join code from logs.
+ * `hint` carries the game's own connect instructions (which menu, what the
+ * fields are called) so /gate join can render per-game guidance without
+ * per-game code. Address-type games get the host/port/password reported as
+ * SEPARATE embed fields — most direct-connect dialogs ask for them separately.
+ */
 export type JoinStrategy =
-  | { type: 'address'; port: number }
-  | { type: 'join-code'; logPattern: string };
+  | { type: 'address'; port: number; hint?: string }
+  | { type: 'join-code'; logPattern: string; hint?: string };
 
 export interface Persona {
   /** The bot's name. e.g. 'GATEKeeper'. */

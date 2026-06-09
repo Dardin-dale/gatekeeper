@@ -27,7 +27,7 @@ describe('game profile registry', () => {
 
   it('abiotic factor exposes an A2S query port and address-based join', () => {
     expect(abioticFactor.queryPort).toBe(27015);
-    expect(abioticFactor.join).toEqual({ type: 'address', port: 7777 });
+    expect(abioticFactor.join).toMatchObject({ type: 'address', port: 7777 });
     expect(abioticFactor.ports.some((r) => r.from === 7777)).toBe(true);
   });
 });

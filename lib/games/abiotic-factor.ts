@@ -54,7 +54,12 @@ export const abioticFactor: GameProfile = {
   instanceType: 't3.large',
   dataVolumeSizeGb: 20, // SteamCMD pulls several GB for AF
 
-  join: { type: 'address', port: 7777 },
+  join: {
+    type: 'address',
+    port: 7777,
+    // AF's Direct Connect dialog takes IP, Port and Password as separate boxes.
+    hint: 'In Abiotic Factor: **Join Game → Direct Connect**, then enter the IP, Port and Password below as separate fields.',
+  },
 
   persona: {
     botName: 'GATEKeeper',
