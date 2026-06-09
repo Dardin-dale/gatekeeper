@@ -57,8 +57,13 @@ export const abioticFactor: GameProfile = {
   join: {
     type: 'address',
     port: 7777,
-    // AF's Direct Connect dialog takes IP, Port and Password as separate boxes.
-    hint: 'In Abiotic Factor: **Join Game → Direct Connect**, then enter the IP, Port and Password below as separate fields.',
+    // AF's Direct Connect dialog takes IP, Port and Password as separate boxes;
+    // alternatively the per-session lobby code + password works from Join Game.
+    hint: 'In Abiotic Factor: **Join Game → Direct Connect** with the IP, Port and Password below — ' +
+      'or enter the Lobby Code + Password instead.',
+    // Per-session code printed at startup, e.g. 'LogAbiotic: Warning: Session short code: OKNPD'
+    // (verified against the live dedicated server's docker logs).
+    codeLogPattern: 'Session short code: [A-Z0-9]+',
   },
 
   persona: {

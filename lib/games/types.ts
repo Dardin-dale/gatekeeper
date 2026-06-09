@@ -108,7 +108,19 @@ export interface PortRange {
  * SEPARATE embed fields — most direct-connect dialogs ask for them separately.
  */
 export type JoinStrategy =
-  | { type: 'address'; port: number; hint?: string }
+  | {
+      type: 'address';
+      port: number;
+      hint?: string;
+      /**
+       * Optional: some address games ALSO mint a per-session lobby/join code,
+       * printed in the server logs (AF: 'Session short code: OKNPD'). An ERE
+       * matched against container logs by the on-host monitor at first
+       * liveness; the LAST whitespace-separated token of the latest match is
+       * the code, written to SSM /gatekeeper/<game>/join-code for /gate join.
+       */
+      codeLogPattern?: string;
+    }
   | { type: 'join-code'; logPattern: string; hint?: string };
 
 export interface Persona {

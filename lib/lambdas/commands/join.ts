@@ -71,10 +71,27 @@ export async function handleJoinCommand(): Promise<APIGatewayProxyResult> {
     console.log("No active world in SSM; omitting password from join info");
   }
 
+  // Per-session lobby code, scraped from the server logs by the host monitor.
+  let lobbyCode: string | undefined;
+  try {
+    const result = await ssmClient.send(new GetParameterCommand({
+      Name: SSM_PARAMS.JOIN_CODE,
+    }));
+    const value = result.Parameter?.Value;
+    if (value && value !== "none") lobbyCode = value;
+  } catch (err) {
+    console.log("No join code in SSM");
+  }
+
+  // Fenced code blocks get Discord's native Copy button (hover on desktop,
+  // long-press on mobile) — single backticks don't. Password additionally
+  // spoiler-wrapped so screenshots/streams don't leak it.
+  const copyable = (v: string | number) => `\`\`\`\n${v}\n\`\`\``;
   const fields = [
-    { name: "🌐 IP / Address", value: `\`${host}\``, inline: true },
-    { name: "🔌 Port", value: `\`${join.port}\``, inline: true },
-    ...(password ? [{ name: "🔑 Password", value: `\`${password}\``, inline: true }] : []),
+    { name: "🌐 Address", value: copyable(host), inline: true },
+    { name: "🔌 Port", value: copyable(join.port), inline: true },
+    ...(password ? [{ name: "🔑 Password", value: `||${copyable(password)}||`, inline: true }] : []),
+    ...(lobbyCode ? [{ name: "🎟️ Lobby Code", value: copyable(lobbyCode), inline: true }] : []),
   ];
 
   return respond({

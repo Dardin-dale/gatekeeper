@@ -71,6 +71,7 @@ export const SSM_PARAMS = {
   AUTO_SHUTDOWN_MINUTES: `${SSM_PREFIX}/auto-shutdown-minutes`,
   BOOT_TIMEOUT_MINUTES: `${SSM_PREFIX}/boot-timeout-minutes`,
   PLAYER_COUNT: `${SSM_PREFIX}/player-count`,
+  JOIN_CODE: `${SSM_PREFIX}/join-code`, // per-session lobby code scraped by the host monitor ('none' = absent)
   // Per-Discord-server default world: /gatekeeper/<game-id>/discord/<guild-id>/default-world
   GUILD_DEFAULT_WORLD_PREFIX: `${SSM_PREFIX}/discord`,
 };

@@ -30,11 +30,14 @@ INSTANCE_ID=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-dat
 GAME_ID=$(jq -r '.id' "$PROFILE")
 QUERY_PORT=$(jq -r '.queryPort' "$PROFILE")
 GAME_PORT=$(jq -r '.ports[0].from' "$PROFILE")
+CONTAINER_NAME=$(jq -r '.containerName' "$PROFILE")
+JOIN_CODE_PATTERN=$(jq -r '.joinCodePattern // empty' "$PROFILE")
 NAMESPACE="GameServer"
 PLAYER_COUNT_PARAM="/gatekeeper/${GAME_ID}/player-count"
 AUTO_SHUTDOWN_PARAM="/gatekeeper/${GAME_ID}/auto-shutdown-minutes"
 BOOT_TIMEOUT_PARAM="/gatekeeper/${GAME_ID}/boot-timeout-minutes"
 ACTIVE_WORLD_PARAM="/gatekeeper/${GAME_ID}/active-world"
+JOIN_CODE_PARAM="/gatekeeper/${GAME_ID}/join-code"
 
 # Fresh session: clear edge/idle state so stale files can't trigger an instant shutdown.
 rm -f "$SEEN_LIVE_FLAG" "$LIVE_STATE_FILE"
@@ -90,8 +93,21 @@ while true; do
       # Prefer the stable derived domain; fall back to the public IP.
       JOIN_HOST="${GAME_DOMAIN:-}"
       [ -z "$JOIN_HOST" ] && JOIN_HOST=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/public-ipv4)
+      # Per-session lobby/join code: scrape the container logs (pattern from the
+      # profile; the code is the last token of the latest match) and publish to
+      # SSM so /gate join can show it. 'none' = scrape found nothing.
+      JOIN_CODE=""
+      if [ -n "$JOIN_CODE_PATTERN" ]; then
+        JOIN_CODE=$(docker logs "$CONTAINER_NAME" 2>&1 | grep -oE "$JOIN_CODE_PATTERN" | tail -1 | awk '{print $NF}')
+        aws ssm put-parameter --name "$JOIN_CODE_PARAM" --type String \
+          --value "${JOIN_CODE:-none}" --overwrite --region "$REGION" > /dev/null 2>&1
+        log "Session join code: ${JOIN_CODE:-not found}"
+      fi
       log "Server is LIVE (first time this session) at ${JOIN_HOST}:${GAME_PORT}"
-      post_discord "🟢 Server Online" "The facility is live. Join at \`${JOIN_HOST}:${GAME_PORT}\`" 3776160
+      DESC="The facility is live. Join at \`${JOIN_HOST}:${GAME_PORT}\`"
+      [ -n "$JOIN_CODE" ] && DESC="${DESC}
+Lobby code: \`${JOIN_CODE}\` — \`/gate join\` has the password."
+      post_discord "🟢 Server Online" "$DESC" 3776160
     fi
   else
     rm -f "$LIVE_STATE_FILE"

@@ -47,6 +47,9 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     defaultArgs: profile.container.defaultArgs ?? '',
     ports: profile.ports,
     queryPort: profile.queryPort,
+    // ERE for the per-session lobby/join code in container logs (empty = none).
+    // The monitor scrapes it at first liveness and writes it to SSM.
+    joinCodePattern: profile.join.type === 'address' ? (profile.join.codeLogPattern ?? '') : '',
     // Just enough persona for the host's webhook posts to come from the character
     // in full (e.g. Dr. Derek Manse) with his avatar — matches the lambda embeds.
     persona: {
