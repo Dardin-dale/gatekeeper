@@ -45,8 +45,20 @@ GAME=abiotic-factor  →  GateStack-AbioticFactor   (own EC2 / EBS / buckets / S
 GAME=valheim         →  GateStack-Valheim         (later — just add a profile)
 ```
 
-This is what lets GATEKeeper run alongside the original huginbot Valheim stack on the same AWS account
-without any resource collisions.
+The **`GAME` env var is the single game selector** for every tool — the CDK deploy (stack name),
+the Lambdas, `register-commands`, and the CLI all key off it. Set the default for your checkout in
+`.env` (`GAME=abiotic-factor`) and override per-invocation when working with another game:
+
+```bash
+GAME=valheim npm run deploy              # deploy a different game's stack
+GAME=valheim npm run register-commands   # register that game's Discord commands
+GAME=valheim npm run cli backup list     # point the CLI at that game's stack
+```
+
+Adding a game = write a profile (copy `lib/games/_template.ts`, see `docs/adding-a-game.md`), add
+its `config/<game>.worlds.json` + Discord app creds, and deploy with its `GAME` id. This is what
+lets GATEKeeper run alongside the original huginbot Valheim stack on the same AWS account without
+any resource collisions.
 
 ## Quick start
 
