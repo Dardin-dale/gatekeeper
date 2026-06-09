@@ -35,8 +35,9 @@ import {
 } from "../utils/world-config";
 import { sendFollowUpMessage } from "../utils/discord-followup";
 import { InteractionResponseType } from "./types";
-import { ACTIVE_GAME, gameDomain } from "../../games";
+import { ACTIVE_GAME } from "../../games";
 import { personaEmbed } from "./util/persona";
+import { buildJoinFields, joinHost } from "./util/join-info";
 
 export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
   try {
@@ -173,16 +174,12 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
       });
     }
 
-    // Add the join address when running: the stable derived domain if a
-    // BASE_DOMAIN is configured, else the instance's current public IP.
+    // Join info while running — same per-game format as /gate join
+    // (address/port/password/lobby code via the shared util/join-info).
     if (status === 'running' && ACTIVE_GAME.join.type === 'address') {
-      const host = gameDomain() ?? publicIp;
+      const host = joinHost(publicIp);
       if (host) {
-        fields.push({
-          name: 'Join',
-          value: `\`${host}:${ACTIVE_GAME.join.port}\``,
-          inline: false,
-        });
+        fields.push(...await buildJoinFields(host));
       }
     }
 

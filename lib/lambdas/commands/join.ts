@@ -1,19 +1,15 @@
 import { APIGatewayProxyResult } from "aws-lambda";
-import { GetParameterCommand } from "@aws-sdk/client-ssm";
 import { InteractionResponseType } from "./types";
-import { ACTIVE_GAME, gameDomain } from "../../games";
-import { getFastServerStatus, ssmClient, SSM_PARAMS } from "../utils/aws-clients";
+import { ACTIVE_GAME } from "../../games";
+import { getFastServerStatus } from "../utils/aws-clients";
 import { personaEmbed } from "./util/persona";
+import { buildJoinFields, joinHost, joinHint } from "./util/join-info";
 
 /**
  * /gate join — how to connect. The join strategy is game-dependent and comes
- * from the profile's `join` discriminated union:
- *   - { type: 'address', port, hint? }   (Abiotic Factor): report the host
- *     (derived domain ?? instance public IP), port and the active world's
- *     password as SEPARATE fields — direct-connect dialogs ask for them
- *     separately — with the game's own connect instructions from `hint`.
- *   - { type: 'join-code', ... }  (Valheim-style): the code is detected on-host
- *     and posted to the channel; this command just points players there.
+ * from the profile's `join` discriminated union; the actual field rendering
+ * (address/port/password/lobby code) is shared with /gate status via
+ * util/join-info so both always show the same per-game format.
  */
 export async function handleJoinCommand(): Promise<APIGatewayProxyResult> {
   const join = ACTIVE_GAME.join;
@@ -47,8 +43,7 @@ export async function handleJoinCommand(): Promise<APIGatewayProxyResult> {
     });
   }
 
-  // Prefer the stable derived domain; fall back to the current public IP.
-  const host = gameDomain() ?? publicIp;
+  const host = joinHost(publicIp);
   if (!host) {
     return respond({
       embeds: [personaEmbed({
@@ -58,47 +53,11 @@ export async function handleJoinCommand(): Promise<APIGatewayProxyResult> {
     });
   }
 
-  // The active world's password (players need it for direct connect).
-  let password: string | undefined;
-  try {
-    const result = await ssmClient.send(new GetParameterCommand({
-      Name: SSM_PARAMS.ACTIVE_WORLD,
-    }));
-    if (result.Parameter?.Value) {
-      password = JSON.parse(result.Parameter.Value).serverPassword || undefined;
-    }
-  } catch (err) {
-    console.log("No active world in SSM; omitting password from join info");
-  }
-
-  // Per-session lobby code, scraped from the server logs by the host monitor.
-  let lobbyCode: string | undefined;
-  try {
-    const result = await ssmClient.send(new GetParameterCommand({
-      Name: SSM_PARAMS.JOIN_CODE,
-    }));
-    const value = result.Parameter?.Value;
-    if (value && value !== "none") lobbyCode = value;
-  } catch (err) {
-    console.log("No join code in SSM");
-  }
-
-  // Fenced code blocks get Discord's native Copy button (hover on desktop,
-  // long-press on mobile) — single backticks don't. Password additionally
-  // spoiler-wrapped so screenshots/streams don't leak it.
-  const copyable = (v: string | number) => `\`\`\`\n${v}\n\`\`\``;
-  const fields = [
-    { name: "🌐 Address", value: copyable(host), inline: true },
-    { name: "🔌 Port", value: copyable(join.port), inline: true },
-    ...(password ? [{ name: "🔑 Password", value: `||${copyable(password)}||`, inline: true }] : []),
-    ...(lobbyCode ? [{ name: "🎟️ Lobby Code", value: copyable(lobbyCode), inline: true }] : []),
-  ];
-
   return respond({
     embeds: [personaEmbed({
       title: "🔌 Join the server",
-      description: join.hint ?? `Connect in-game to \`${host}:${join.port}\``,
-      extra: { fields },
+      description: joinHint() ?? `Connect in-game to \`${host}:${join.port}\``,
+      extra: { fields: await buildJoinFields(host) },
     })],
   });
 }
