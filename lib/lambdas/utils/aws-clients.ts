@@ -116,6 +116,7 @@ export async function getFastServerStatus(): Promise<{
   status: string;
   message: string;
   launchTime?: Date;
+  publicIp?: string;
 }> {
   try {
     // Use withRetry which already has proper timeout handling via AWS client config
@@ -123,7 +124,8 @@ export async function getFastServerStatus(): Promise<{
     return {
       status: details.status,
       message: getStatusMessage(details.status),
-      launchTime: details.launchTime
+      launchTime: details.launchTime,
+      publicIp: details.publicIp
     };
   } catch (error) {
     console.error('Fast server status check failed:', error);

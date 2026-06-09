@@ -42,7 +42,7 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
   try {
     console.log(`Getting server status details`);
 
-    const { status, message: fastMessage, launchTime } = await getFastServerStatus();
+    const { status, message: fastMessage, launchTime, publicIp } = await getFastServerStatus();
     console.log(`Server status retrieved: ${status}`);
 
     // Try to get the active world and player count from SSM. Abiotic Factor is
@@ -173,16 +173,17 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
       });
     }
 
-    // Add the join address when running, if a stable domain is configured.
-    // (Otherwise the host posts the public IP in its readiness ping.)
-    const joinPort = ACTIVE_GAME.join.type === 'address' ? ACTIVE_GAME.join.port : ACTIVE_GAME.ports[0]?.from;
-    const host = gameDomain();
-    if (status === 'running' && host && joinPort) {
-      fields.push({
-        name: 'Join',
-        value: `\`${host}:${joinPort}\``,
-        inline: false,
-      });
+    // Add the join address when running: the stable derived domain if a
+    // BASE_DOMAIN is configured, else the instance's current public IP.
+    if (status === 'running' && ACTIVE_GAME.join.type === 'address') {
+      const host = gameDomain() ?? publicIp;
+      if (host) {
+        fields.push({
+          name: 'Join',
+          value: `\`${host}:${ACTIVE_GAME.join.port}\``,
+          inline: false,
+        });
+      }
     }
 
     const footerSuffix = status === 'running'
