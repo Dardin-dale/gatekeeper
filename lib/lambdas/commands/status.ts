@@ -1,0 +1,219 @@
+import { APIGatewayProxyResult } from "aws-lambda";
+import {
+  StartInstancesCommand,
+  StopInstancesCommand,
+} from "@aws-sdk/client-ec2";
+import {
+  GetParameterCommand,
+  PutParameterCommand,
+  DeleteParameterCommand,
+  SendCommandCommand,
+} from "@aws-sdk/client-ssm";
+import { ListObjectsV2Command } from "@aws-sdk/client-s3";
+import {
+  ec2Client,
+  ssmClient,
+  s3Client,
+  withRetry,
+  SERVER_INSTANCE_ID,
+  BACKUP_BUCKET_NAME,
+  SSM_PARAMS,
+  getGuildDefaultWorldParam,
+  getInstanceStatus,
+  getStatusMessage,
+  getFastServerStatus,
+} from "../utils/aws-clients";
+import {
+  createSuccessResponse,
+  createBadRequestResponse,
+  createErrorResponse,
+} from "../utils/responses";
+import {
+  WORLD_CONFIGS,
+  WorldConfig,
+  validateWorldConfig,
+} from "../utils/world-config";
+import { sendFollowUpMessage } from "../utils/discord-followup";
+import { InteractionResponseType } from "./types";
+import { ACTIVE_GAME, gameDomain } from "../../games";
+import { personaEmbed } from "./util/persona";
+
+export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
+  try {
+    console.log(`Getting server status details`);
+
+    const { status, message: fastMessage, launchTime } = await getFastServerStatus();
+    console.log(`Server status retrieved: ${status}`);
+
+    // Try to get the active world and player count from SSM. Abiotic Factor is
+    // address-based (no join code); player count comes from the on-host A2S monitor.
+    let activeWorld: string | undefined;
+    let playerCount: number | undefined;
+
+    if (status === 'running') {
+      try {
+        const worldResult = await ssmClient.send(new GetParameterCommand({
+          Name: SSM_PARAMS.ACTIVE_WORLD
+        }));
+        if (worldResult.Parameter?.Value) {
+          const worldConfig = JSON.parse(worldResult.Parameter.Value);
+          activeWorld = worldConfig.name || worldConfig.worldName;
+        }
+      } catch (err) {
+        console.log('No active world found in SSM');
+      }
+
+      try {
+        const playerCountResult = await ssmClient.send(new GetParameterCommand({
+          Name: SSM_PARAMS.PLAYER_COUNT
+        }));
+        if (playerCountResult.Parameter?.Value) {
+          playerCount = parseInt(playerCountResult.Parameter.Value, 10);
+        }
+      } catch (err) {
+        console.log('No player count found in SSM');
+      }
+    }
+
+    // Get auto-shutdown setting
+    let autoShutdownMinutes: string | undefined;
+    try {
+      const shutdownResult = await ssmClient.send(new GetParameterCommand({
+        Name: SSM_PARAMS.AUTO_SHUTDOWN_MINUTES
+      }));
+      autoShutdownMinutes = shutdownResult.Parameter?.Value;
+    } catch (err) {
+      console.log('Auto-shutdown parameter not found, using default');
+      autoShutdownMinutes = '20';
+    }
+
+    // Determine server state
+    let statusEmoji: string;
+    let statusText: string;
+    let description: string;
+    let embedColor: number;
+
+    if (status === 'stopped') {
+      statusEmoji = '❌';
+      statusText = 'Stopped';
+      description = 'The server is currently offline.';
+      embedColor = 0xff0000;
+    } else if (status === 'stopping' || status === 'shutting-down') {
+      statusEmoji = '🛑';
+      statusText = 'Stopping';
+      description = 'Server is shutting down...';
+      embedColor = 0xff6600;
+    } else if (status === 'running') {
+      statusEmoji = '✅';
+      statusText = 'Online';
+      description = `The ${ACTIVE_GAME.displayName} server is online. ` +
+        `First boot can take a few minutes to finish loading.`;
+      embedColor = 0x39a0a0;
+    } else if (status === 'pending') {
+      statusEmoji = '⏳';
+      statusText = 'Starting';
+      description = 'Server is starting up...';
+      embedColor = 0xffaa00;
+    } else {
+      statusEmoji = '⚠️';
+      statusText = 'Unknown';
+      description = fastMessage;
+      embedColor = 0xff6600;
+    }
+
+    let fields: Array<{name: string, value: string, inline: boolean}> = [
+      {
+        name: 'Status',
+        value: `${statusEmoji} ${statusText}`,
+        inline: true,
+      }
+    ];
+
+    // Add world info if available
+    if (activeWorld) {
+      fields.push({
+        name: 'World',
+        value: `🌍 ${activeWorld}`,
+        inline: true,
+      });
+    }
+
+    // Add player count if available (written by the on-host A2S monitor)
+    if (status === 'running' && playerCount !== undefined) {
+      fields.push({
+        name: 'Players',
+        value: `👥 ${playerCount}`,
+        inline: true,
+      });
+    }
+
+    // Add uptime if running
+    if (status === 'running' && launchTime) {
+      const uptimeMs = Date.now() - launchTime.getTime();
+      const uptimeMinutes = Math.floor(uptimeMs / (1000 * 60));
+      const uptimeHours = Math.floor(uptimeMinutes / 60);
+      const remainingMinutes = uptimeMinutes % 60;
+
+      fields.push({
+        name: 'Uptime',
+        value: uptimeHours > 0 ? `${uptimeHours}h ${remainingMinutes}m` : `${uptimeMinutes}m`,
+        inline: true,
+      });
+    }
+
+    // Add auto-shutdown info
+    if (autoShutdownMinutes) {
+      const shutdownText = autoShutdownMinutes === 'off' || autoShutdownMinutes === 'disabled'
+        ? '⏸️ Disabled'
+        : `⏱️ ${autoShutdownMinutes}m idle`;
+      fields.push({
+        name: 'Auto-Shutdown',
+        value: shutdownText,
+        inline: true,
+      });
+    }
+
+    // Add the join address when running, if a stable domain is configured.
+    // (Otherwise the host posts the public IP in its readiness ping.)
+    const joinPort = ACTIVE_GAME.join.type === 'address' ? ACTIVE_GAME.join.port : ACTIVE_GAME.ports[0]?.from;
+    const host = gameDomain();
+    if (status === 'running' && host && joinPort) {
+      fields.push({
+        name: 'Join',
+        value: `\`${host}:${joinPort}\``,
+        inline: false,
+      });
+    }
+
+    const footerSuffix = status === 'running'
+      ? 'Use /gate stop when done playing'
+      : 'Use /gate start to launch the server';
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: {
+          embeds: [personaEmbed({
+            title: `${ACTIVE_GAME.displayName} Server Status`,
+            description,
+            color: embedColor,
+            footerSuffix,
+            extra: { fields, timestamp: new Date().toISOString() },
+          })],
+        },
+      }),
+    };
+  } catch (error) {
+    console.error('Error in handleStatusCommand:', error);
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: {
+          content: '❌ Failed to get server status. Please try again.',
+        },
+      }),
+    };
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "_comment": "Per-game Discord application credentials. Each game is its own Discord app (one app per game), so its creds live here, keyed by game id. Copy to abiotic-factor.discord.json (gitignored) and fill in from the Discord Developer Portal. Falls back to .env (DISCORD_APP_ID / DISCORD_BOT_PUBLIC_KEY / DISCORD_BOT_SECRET_TOKEN) when this file is absent.",
+  "appId": "000000000000000000",
+  "publicKey": "0000000000000000000000000000000000000000000000000000000000000000",
+  "botToken": "your-discord-bot-token-here"
+}

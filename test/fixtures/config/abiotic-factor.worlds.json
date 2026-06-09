@@ -1,0 +1,10 @@
+[
+  {
+    "name": "TestWorld",
+    "worldName": "TestCascade",
+    "password": "test-password",
+    "discordServerId": "111111111111111111",
+    "adminIds": "",
+    "default": true
+  }
+]

@@ -1,0 +1,132 @@
+# GATEKeeper
+
+A cost-effective, AWS-based **Abiotic Factor** dedicated-server manager with Discord integration.
+Start, stop, and join your server straight from Discord — and only pay for the hours you actually play.
+
+> *"This is a recorded message from Director Manse. The Cascade facility is online."*
+> GATEKeeper speaks as **Dr. Derek Manse**, Director of Research of the GATE Cascade facility.
+
+> 🚧 **Status: deploy-ready, pre-first-deploy.** Adapted from
+> [huginbot](https://github.com/Dardin-dale/huginbot) (a Valheim server manager) onto a generic,
+> multi-game backbone. The Abiotic Factor profile is fully wired and validated against a real local
+> server; the cloud stack synthesizes cleanly. See `docs/DEVELOPMENT-PLAN.md` for status.
+
+## What it does
+
+- **Discord control** — manage the server with `/gate` slash commands (`start`, `stop`, `status`, `join`)
+- **Pay only while playing** — the server auto-stops after a configurable idle timeout (default 20 min);
+  a stopped EC2 instance costs ~$0 for compute
+- **Player-aware auto-shutdown** — idle detection via Steam **A2S** query (no log scraping)
+- **Stable join address** — connect via `your-subdomain.example.net:7777` (Route 53) instead of a changing IP
+- **World backups** — scheduled snapshots to S3, downloadable to local disk via the CLI
+- **Multi-game by design** — game-specific details live in a `GameProfile`; adding another co-op game
+  later is "write a profile + deploy," not a rewrite
+
+## Architecture
+
+```
+Discord ──▶ API Gateway ──▶ Lambda ──▶ EC2 (Docker)
+                              │          └─ Abiotic Factor dedicated server (Wine)
+                              ├─▶ SSM Parameter Store  (/gatekeeper/<game>/… config + state)
+                              └─▶ S3                    (world backups)
+```
+
+- **EC2** runs the Abiotic Factor Windows server under Wine in a Docker container
+- **Lambda** handles Discord interactions (Ed25519-verified) and server lifecycle
+- **SSM** holds per-game config/state under `/gatekeeper/<game>/…`
+- **S3** stores world backups
+
+### Multi-game model
+
+One parameterized stack, deployed **once per game**, each fully isolated:
+
+```
+GAME=abiotic-factor  →  GateStack-AbioticFactor   (own EC2 / EBS / buckets / SSM subtree)
+GAME=valheim         →  GateStack-Valheim         (later — just add a profile)
+```
+
+This is what lets GATEKeeper run alongside the original huginbot Valheim stack on the same AWS account
+without any resource collisions.
+
+## Quick start
+
+**Prerequisites:** AWS account + CLI configured ([guide](docs/aws-setup.md)), Node.js 18+, a Discord
+server you admin ([guide](docs/discord-setup.md)).
+
+```bash
+git clone https://github.com/Dardin-dale/gatekeeper.git
+cd gatekeeper
+npm install
+cp .env.example .env                                                  # AWS region, Discord app values
+cp config/abiotic-factor.worlds.example.json config/abiotic-factor.worlds.json   # then edit: worlds + passwords
+```
+
+1. **Create a Discord app** (a new one — don't reuse another bot): put the Application ID, Public Key,
+   and Bot Token in `.env` (or in `config/abiotic-factor.discord.json`). Invite it with
+   **View Channels + Send Messages + Manage Webhooks**.
+2. **Configure your world** in `config/abiotic-factor.worlds.json` (name, save name, password, your
+   Discord server ID). This file is gitignored — secrets stay out of git.
+3. **Deploy:** `source .env && npm run deploy` (creates `GateStack-AbioticFactor`; ~10–15 min).
+4. **Register commands:** `npm run register-commands` (global commands take up to ~1 hr to appear).
+5. **Wire Discord → infra:** in the Developer Portal, set the **Interactions Endpoint URL** to the
+   `ApiEndpoint` deploy output **plus `interactions/control`**
+   (e.g. `https://xxxx.execute-api.us-west-2.amazonaws.com/prod/interactions/control`).
+   Discord PING-validates it on save.
+6. **In Discord:** `/gate setup` (creates the notification webhook), then `/gate start`.
+
+The server takes a few minutes to boot; the join address is posted to your channel when it's ready.
+
+## Discord commands
+
+| Command | Description |
+|---------|-------------|
+| `/gate setup`  | Initialize GATEKeeper notifications in the current channel |
+| `/gate start`  | Start the server |
+| `/gate stop`   | Stop the server (backs up first; `force` skips the backup) |
+| `/gate status` | Server status + live player count |
+| `/gate join`   | Get the connection address (`host:7777`) |
+| `/gate hail`   | A transmission from Dr. Derek Manse (ping test) |
+| `/gate help`   | List the commands |
+
+> The top-level command is the game's own (`commandName` in its profile): `/gate` for Abiotic Factor,
+> `/hugin` for Valheim. That keeps the picker unambiguous when bots share a Discord server.
+
+## CLI
+
+Server control lives in Discord; the small game-aware CLI covers the out-of-band bits (saves), and
+discovers the bucket/instance from the deployed stack — nothing to configure beyond AWS creds:
+
+```bash
+npm run cli backup list                    # S3 backups for the active game (GAME=<id>)
+npm run cli backup pull [name|latest]      # download a backup to ./local/backups
+npm run cli backup create                  # trigger a backup on the running server
+npm run cli backup restore [name|latest]   # roll the server back to a backup
+npm run cli world push <dir> [name]        # upload a local/friend's save as a seed
+npm run cli world restore [name|latest]    # load a seed onto the running server
+```
+
+See `docs/cli.md` (including the save layout for seeding a friend's world).
+
+## Cost
+
+You pay only while the server runs, and several brakes bound the worst case:
+
+- **EC2** `t3.large` ≈ $0.08/hr running, ~$0 stopped. **Auto-shutdown** stops it after idle (default
+  20 min); a **boot-timeout** (default 45 min) stops a wedged boot that never comes online.
+- **EBS** ~$2.40/mo for the 30 GB of storage (this is the only always-on cost; the world is RETAIN'd).
+- **No NAT gateway**, 1-day log retention — the classic surprise costs are designed out.
+- **Lambda / API Gateway / S3** — free-tier territory for a friend bot.
+- Optional **AWS Budget** email alert (`BILLING_ALERT_EMAIL` in `.env`).
+
+**Realistic:** ~$2.50/mo idle floor, ~$5–15/mo with regular play.
+
+## Credits
+
+- Built on [huginbot](https://github.com/Dardin-dale/huginbot) (the Valheim original)
+- Abiotic Factor dedicated server in Docker via Wine —
+  [Pleut/abiotic-factor-linux-docker](https://github.com/Pleut/abiotic-factor-linux-docker)
+- Game/lore reference — [Official Abiotic Factor Wiki](https://abioticfactor.wiki.gg/)
+
+## License
+
+MIT — see LICENSE.

@@ -1,0 +1,14 @@
+[Unit]
+Description=GATEKeeper on-host A2S monitor (player count + auto-shutdown + readiness)
+After=docker.service network-online.target game-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/monitor.sh
+# The script self-terminates after issuing a shutdown; otherwise keep it alive.
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

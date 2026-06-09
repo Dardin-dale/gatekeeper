@@ -1,0 +1,16 @@
+[Unit]
+Description=GATEKeeper game dedicated server (Docker)
+After=docker.service network-online.target update-gatekeeper-scripts.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/start-server.sh
+# Stop the container named in the active game profile (game-agnostic).
+ExecStop=/bin/bash -c 'docker stop "$(jq -r .containerName /etc/gatekeeper/game-profile.json)" || true'
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

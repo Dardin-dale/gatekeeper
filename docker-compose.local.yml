@@ -1,0 +1,38 @@
+# Local dev — boot the Abiotic Factor dedicated server on your machine to validate
+# the image, ports, world save, and A2S query before any AWS deploy (Phase 3, Tier-2).
+#
+# This mirrors the GameProfile exactly (lib/games/abiotic-factor.ts): same image,
+# env mapping, ports, and volume layout the EC2 runtime will use. If it boots and
+# A2S answers here, the cloud runtime built around the same profile will too.
+#
+# Run (override password/world; secrets stay out of git):
+#   AF_PASSWORD=seabuds AF_WORLD=Alpha docker compose -f docker-compose.local.yml up
+#
+# First boot is SLOW: SteamCMD downloads the server (app 2857200) under Wine into
+# ./local/gamefiles (gitignored). Saves persist in ./local/data. Give it several minutes.
+#
+# Validate once it's up (in another terminal):
+#   node scripts/game/a2s-query.js 127.0.0.1 27015
+services:
+  abiotic-factor:
+    image: ghcr.io/pleut/abiotic-factor-linux-docker:latest
+    container_name: abiotic-factor-local
+    environment:
+      SteamServerName: ${AF_SERVER_NAME:-GATEKeeper Local}
+      ServerPassword: ${AF_PASSWORD:-changeme}
+      WorldSaveName: ${AF_WORLD:-Cascade}
+      MaxServerPlayers: ${AF_MAX_PLAYERS:-6}
+      AutoUpdate: "true"
+      UsePerfThreads: "true"
+      NoAsyncLoadingThread: "true"
+      # Raise the Steam server-registration timeout from the default 15s — it's not
+      # enough right after the big SteamCMD download (Steam is slow), which makes
+      # FOnlineAsyncTaskSteamCreateServer fail and A2S/the query port never come up.
+      AdditionalArgs: "-ini:Engine:[OnlineSubsystemSteam]:AsyncTaskTimeout=360"
+    ports:
+      - "7777:7777/udp"   # game
+      - "27015:27015/udp" # Steam A2S query
+    volumes:
+      - ./local/gamefiles:/server
+      - ./local/data:/server/AbioticFactor/Saved
+    restart: "no"
