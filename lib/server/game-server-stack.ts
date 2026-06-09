@@ -357,11 +357,12 @@ export class GameServerStack extends Stack {
         // then `cli world restore` extracts it onto the live data volume via SSM
         // (scripts/game/restore-world.sh) — works any time, not just first boot.
 
-        // Install jq (profile parsing) + Node.js (runs the dependency-free A2S
-        // query helper a2s-query.js used by the on-host monitor).
+        // Install Node.js (runs the dependency-free A2S query helper
+        // a2s-query.js used by the on-host monitor). Straight from the AL2023
+        // repos — Node 18, same major as the Lambdas. (The old AL2 +
+        // nodesource curl|bash failed silently: AL2's glibc 2.26 is too old
+        // for nodesource Node 18, leaving the host with no `node` at all.)
         userData.addCommands(
-            "yum install -y jq",
-            "curl -fsSL https://rpm.nodesource.com/setup_18.x | bash -",
             "yum install -y nodejs"
         );
 
@@ -479,7 +480,9 @@ EOF`,
         this.ec2Instance = new Instance(this, "GameServerInstance", {
             vpc: this.vpc,
             instanceType: instanceType,
-            machineImage: MachineImage.latestAmazonLinux2(),
+            // AL2023: its repos carry Node 18 natively (AL2's glibc is too old
+            // for any supported Node, which silently broke the A2S monitor).
+            machineImage: MachineImage.latestAmazonLinux2023(),
             securityGroup: securityGroup,
             userData: userData,
             role: instanceRole,
