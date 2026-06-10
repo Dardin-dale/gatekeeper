@@ -1,6 +1,6 @@
 import { EventBridgeEvent, Context } from 'aws-lambda';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
-import { persona, personaEmbed } from './commands/util/persona';
+import { persona, personaEmbed, slash } from './commands/util/persona';
 import { ACTIVE_GAME } from '../games';
 
 // Create AWS clients
@@ -46,7 +46,7 @@ async function getWebhookUrl(): Promise<string> {
     }
   }
 
-  throw new Error('No Discord webhook configured - use /gate setup in Discord');
+  throw new Error(`No Discord webhook configured - use ${slash} setup in Discord`);
 }
 
 export async function handler(
@@ -106,7 +106,7 @@ function handleEC2StoppedEvent(detail: any): any {
     embeds: [
       personaEmbed({
         title: '🛑 Server Offline',
-        description: 'The facility has powered down completely. Use `/gate start` when you want to play again.',
+        description: `The facility has powered down completely. Use \`${slash} start\` when you want to play again.`,
         color: 0x95a5a6, // gray
         extra: { timestamp: time.toISOString() },
       }),

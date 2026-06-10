@@ -1,5 +1,6 @@
 import { PutParameterCommand } from '@aws-sdk/client-ssm';
 import { ssmClient, SSM_PARAMS, withRetry } from './aws-clients';
+import { persona, personaFooter } from '../commands/util/persona';
 
 /**
  * Discord webhook validation result interface
@@ -52,15 +53,15 @@ export async function validateWebhook(webhookUrl: string): Promise<WebhookValida
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        content: 'This is a test message from GATEKeeper to verify the webhook configuration.',
-        username: 'GATEKeeper',
+        content: `This is a test message from ${persona.botName} to verify the webhook configuration.`,
+        username: persona.botName,
         embeds: [{
           title: 'Webhook Configuration Test',
           description: 'If you see this message, the webhook is configured correctly. ' +
             'You will receive server notifications at this channel.',
           color: 0x3498db, // Blue color
           footer: {
-            text: 'HuginBot Webhook Validation'
+            text: personaFooter('Webhook Validation')
           },
           timestamp: new Date().toISOString()
         }]
@@ -135,7 +136,7 @@ export async function storeWebhook(discordServerId: string, webhookUrl: string):
 export async function sendWebhookMessage(
   webhookUrl: string, 
   message: string | object,
-  username: string = 'HuginBot'
+  username: string = persona.botName
 ): Promise<boolean> {
   try {
     // Format the message payload

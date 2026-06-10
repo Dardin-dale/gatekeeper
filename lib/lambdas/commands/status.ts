@@ -36,7 +36,7 @@ import {
 import { sendFollowUpMessage } from "../utils/discord-followup";
 import { InteractionResponseType } from "./types";
 import { ACTIVE_GAME } from "../../games";
-import { personaEmbed } from "./util/persona";
+import { personaEmbed, slash } from "./util/persona";
 import { buildJoinFields, joinHost } from "./util/join-info";
 
 export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
@@ -184,8 +184,8 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
     }
 
     const footerSuffix = status === 'running'
-      ? 'Use /gate stop when done playing'
-      : 'Use /gate start to launch the server';
+      ? `Use ${slash} stop when done playing`
+      : `Use ${slash} start to launch the server`;
 
     return {
       statusCode: 200,

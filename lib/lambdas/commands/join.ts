@@ -2,7 +2,7 @@ import { APIGatewayProxyResult } from "aws-lambda";
 import { InteractionResponseType } from "./types";
 import { ACTIVE_GAME } from "../../games";
 import { getFastServerStatus } from "../utils/aws-clients";
-import { personaEmbed } from "./util/persona";
+import { personaEmbed, slash } from "./util/persona";
 import { buildJoinFields, joinHost, joinHint } from "./util/join-info";
 
 /**
@@ -38,7 +38,7 @@ export async function handleJoinCommand(): Promise<APIGatewayProxyResult> {
       embeds: [personaEmbed({
         title: "🔌 Join the server",
         description: `The server is not running (status: ${status}). ` +
-          `Start it with \`/gate start\` — the join address is posted here when it's ready.`,
+          `Start it with \`${slash} start\` — the join address is posted here when it's ready.`,
       })],
     });
   }

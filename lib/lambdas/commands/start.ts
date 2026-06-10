@@ -35,6 +35,7 @@ import {
 } from "../utils/world-config";
 import { sendFollowUpMessage } from "../utils/discord-followup";
 import { InteractionResponseType } from "./types";
+import { persona, personaFooter, slash } from "./util/persona";
 
 export async function handleStartCommand(worldName?: string, guildId?: string): Promise<APIGatewayProxyResult> {
   try {
@@ -54,7 +55,7 @@ export async function handleStartCommand(worldName?: string, guildId?: string): 
               title: '✅ Server Already Running',
               description: 'The server is already online!',
               color: 0x00ff00,
-              footer: { text: 'GATEKeeper • Use /gate status for details' }
+              footer: { text: personaFooter(`Use ${slash} status for details`) }
             }]
           }
         })
@@ -71,7 +72,7 @@ export async function handleStartCommand(worldName?: string, guildId?: string): 
               title: '🚀 Server Already Starting',
               description: 'The server is currently booting up. Please wait a moment.',
               color: 0xffaa00,
-              footer: { text: 'GATEKeeper • You\'ll be notified when it\'s live' }
+              footer: { text: personaFooter("You'll be notified when it's live") }
             }]
           }
         })
@@ -88,7 +89,7 @@ export async function handleStartCommand(worldName?: string, guildId?: string): 
               title: '⏸️ Server is Shutting Down',
               description: 'The server is currently stopping. Please wait a moment for it to fully stop before starting again.',
               color: 0xffaa00,
-              footer: { text: 'GATEKeeper • Try again in a moment' }
+              footer: { text: personaFooter('Try again in a moment') }
             }]
           }
         })
@@ -110,7 +111,7 @@ export async function handleStartCommand(worldName?: string, guildId?: string): 
           body: JSON.stringify({
             type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
             data: {
-              content: `❌ World "${worldName}" not found. Use /gate worlds to see available worlds.`
+              content: `❌ World "${worldName}" not found. Use ${slash} worlds to see available worlds.`
             }
           })
         };
@@ -198,7 +199,7 @@ export async function handleStartCommand(worldName?: string, guildId?: string): 
               inline: true,
             }] : [],
             footer: {
-              text: 'GATEKeeper'
+              text: persona.botName
             },
             timestamp: new Date().toISOString(),
           }]
@@ -217,7 +218,7 @@ export async function handleStartCommand(worldName?: string, guildId?: string): 
             title: '❌ Server Start Failed',
             description: 'Unable to start the server right now. Please try again in a moment.',
             color: 0xff0000,
-            footer: { text: 'GATEKeeper • Contact admin if this persists' }
+            footer: { text: personaFooter('Contact admin if this persists') }
           }]
         }
       })

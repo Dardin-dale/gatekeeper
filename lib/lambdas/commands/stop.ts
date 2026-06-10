@@ -35,6 +35,7 @@ import {
 } from "../utils/world-config";
 import { sendFollowUpMessage } from "../utils/discord-followup";
 import { InteractionResponseType } from "./types";
+import { persona, personaFooter, slash } from "./util/persona";
 
 export async function handleStopCommand(guildId?: string, force: boolean = false): Promise<APIGatewayProxyResult> {
   try {
@@ -54,7 +55,7 @@ export async function handleStopCommand(guildId?: string, force: boolean = false
               title: '❌ Server Already Stopped',
               description: 'The server is not currently running.',
               color: 0xff6600,
-              footer: { text: 'GATEKeeper • Use /gate start to launch the server' }
+              footer: { text: personaFooter(`Use ${slash} start to launch the server`) }
             }]
           }
         })
@@ -71,7 +72,7 @@ export async function handleStopCommand(guildId?: string, force: boolean = false
               title: '🛑 Server Already Stopping',
               description: 'The server is currently shutting down. Please wait.',
               color: 0xffaa00,
-              footer: { text: 'GATEKeeper' }
+              footer: { text: persona.botName }
             }]
           }
         })
@@ -101,7 +102,7 @@ export async function handleStopCommand(guildId?: string, force: boolean = false
                           '🛑 Server stopped immediately\n\n' +
                           '💡 World progress may be lost since last backup',
               color: 0xff0000,
-              footer: { text: 'GATEKeeper • Use /gate stop (no force) for a safe shutdown' }
+              footer: { text: personaFooter(`Use ${slash} stop (no force) for a safe shutdown`) }
             }]
           }
         })
@@ -134,7 +135,7 @@ export async function handleStopCommand(guildId?: string, force: boolean = false
                         '🔄 Server will stop after backup completes\n\n' +
                         '💡 You\'ll receive notifications as the shutdown progresses',
             color: 0xff6600,
-            footer: { text: 'GATEKeeper • Use "/gate stop force" to skip backup' }
+            footer: { text: personaFooter(`Use "${slash} stop force" to skip backup`) }
           }]
         }
       })
@@ -151,7 +152,7 @@ export async function handleStopCommand(guildId?: string, force: boolean = false
             title: '❌ Server Stop Failed',
             description: 'Unable to stop the server right now. Please try again in a moment.',
             color: 0xff0000,
-            footer: { text: 'GATEKeeper • Contact admin if this persists' }
+            footer: { text: personaFooter('Contact admin if this persists') }
           }]
         }
       })

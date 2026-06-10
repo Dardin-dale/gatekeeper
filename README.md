@@ -105,7 +105,8 @@ The server takes a few minutes to boot; the join address is posted to your chann
 | `/gate help`   | List the commands |
 
 > The top-level command is the game's own (`commandName` in its profile): `/gate` for Abiotic Factor,
-> `/hugin` for Valheim. That keeps the picker unambiguous when bots share a Discord server.
+> `/munin` for Valheim (Munin — the other raven — so it never collides with a legacy huginbot in
+> the same guild). That keeps the picker unambiguous when bots share a Discord server.
 
 ## CLI
 

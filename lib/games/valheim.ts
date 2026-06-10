@@ -1,15 +1,16 @@
 import { GameProfile } from './types';
 
 /**
- * Valheim — faithful profile STUB proving the GameProfile contract covers the
- * original huginbot game. NOT deployed by GATEKeeper in this pass; it documents
- * the second data point (log-scrape player count + join-code) so the abstraction
- * isn't shaped by a single game. Porting/retiring huginbot onto this is a later pass.
+ * Valheim — the GATEKeeper port of huginbot. Personified as MUNIN (memory, the
+ * other of Odin's ravens) rather than Hugin so it can run side-by-side with the
+ * live huginbot during migration: distinct Discord app, distinct /munin command,
+ * zero namespace overlap. Deploy with GAME=valheim -> GateStack-Valheim; retire
+ * huginbot once worlds are migrated (docs/GAME-CANDIDATES.md has the checklist).
  */
 export const valheim: GameProfile = {
   id: 'valheim',
   displayName: 'Valheim',
-  commandName: 'hugin', // /hugin start | stop | status | hail | join | setup | help
+  commandName: 'munin', // /munin start | stop | status | hail | join | setup | help
   subdomain: 'valheim', // valheim.<BASE_DOMAIN>
 
   container: {
@@ -62,18 +63,23 @@ export const valheim: GameProfile = {
   },
 
   persona: {
-    botName: 'HuginBot',
-    characterName: 'Hugin',
-    color: 0x2c2f33,
-    thumbnailUrl: 'https://static.wikia.nocookie.net/valheim/images/7/7d/Hugin.png',
-    footer: 'Wisdom of the All-Father',
+    botName: 'MuninBot',
+    characterName: 'Munin',
+    color: 0x4a6b8a, // cold fjord blue — distinct from huginbot's embeds
+    // Munin art from the Valheim wiki — verified a direct image (200 image/webp,
+    // not hotlink-blocked). TODO(assets-bucket): self-host alongside the Manse
+    // hologram when the public assets bucket lands.
+    thumbnailUrl: 'https://static.wikia.nocookie.net/valheim/images/5/52/Munin.png',
+    footer: 'Memory of the All-Father',
+    // Munin is memory to Hugin's thought: he remembers, records, and recalls.
     hailQuotes: [
-      'Hrafn! The All-Father sent me to guide you.',
-      'Skål! Your halls await worthy warriors!',
-      'The server stands ready, will you answer the call?',
-      'The ravens watch over your world. Odin is pleased.',
-      'Hugin remembers all backups in Odin\'s wisdom.',
-      'I spy with my raven eye, players venturing forth!',
+      'Hrafn! I am Munin — Hugin thinks, I remember. Your worlds are safe in my keeping.',
+      'The All-Father fears most to lose me, for memory outlasts thought. Your saves agree.',
+      'I remember every raid, every death, every backup. Especially the deaths.',
+      'Skål! The mead hall stands where you left it — I made sure of it.',
+      'My brother scouts ahead; I keep the ledger. The server answers when you call.',
+      'Odin sends two ravens over Midgard. You got the one with the better records.',
+      'Memory of the All-Father, at your service. Nothing of your world is forgotten.',
     ],
   },
 };

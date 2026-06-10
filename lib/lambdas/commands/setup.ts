@@ -9,7 +9,7 @@ import {
   SSM_PARAMS,
 } from "../utils/aws-clients";
 import { InteractionResponseType } from "./types";
-import { persona, personaEmbed } from "./util/persona";
+import { persona, personaEmbed, slash } from "./util/persona";
 
 // NOTE: all work happens INLINE before returning. Lambda freezes the execution
 // environment the moment the handler returns, so a fire-and-forget deferred
@@ -75,7 +75,7 @@ export async function handleSetupCommand(interaction: any): Promise<APIGatewayPr
               extra: {
                 fields: [{
                   name: 'Need to change channels?',
-                  value: 'Delete the webhook in this channel\'s settings and run `/gate setup` in the new channel.',
+                  value: `Delete the webhook in this channel's settings and run \`${slash} setup\` in the new channel.`,
                   inline: false
                 }],
               },
@@ -155,7 +155,7 @@ export async function handleSetupCommand(interaction: any): Promise<APIGatewayPr
               },
               {
                 name: '🛠️ Next Steps',
-                value: 'Use `/gate start` to launch the server and you\'ll see notifications here!',
+                value: `Use \`${slash} start\` to launch the server and you'll see notifications here!`,
                 inline: false
               }
             ],

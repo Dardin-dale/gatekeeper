@@ -160,7 +160,7 @@ subtree), deployed independently. Chosen for its simplicity and cost isolation: 
 app per game is trivial, and a game you aren't playing costs ~$0 (instance auto-stops; `cdk destroy`
 its stack for true $0, the RETAIN'd EBS keeps the world). Per-game creds live in
 `config/<game>.discord.json`; `commandName` gives each game its own branded top-level command
-(`/gate`, `/hugin`) so the picker stays unambiguous in a shared server.
+(`/gate`, `/munin`) so the picker stays unambiguous in a shared server.
 
 Cost basis for the decision: the VPC is **public-subnet only (no NAT gateway)**, so there's no ~$32/mo
 idle hole; EC2 compute is the only real cost and auto-stops when idle; a dormant game's floor is just

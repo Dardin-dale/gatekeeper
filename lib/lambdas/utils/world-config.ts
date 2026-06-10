@@ -6,6 +6,8 @@ export interface WorldConfig {
   serverPassword: string;      // Server password
   adminIds?: string;           // Admin Steam IDs (space-separated)
   default?: boolean;           // The world /gate start loads when none is specified
+  extraArgs?: string;          // Per-world launch args, appended to the profile's defaultArgs
+                               // (e.g. Valheim's '-crossplay -modifier combat hard')
   mods?: string[];             // S3 mod-library entries to install for this world
   overrides?: Record<string, unknown>; // Optional container env overrides
 }
@@ -81,6 +83,8 @@ interface RawWorld {
   discordId?: string;
   adminIds?: string;
   default?: boolean;
+  extraArgs?: string;
+  serverArgs?: string; // huginbot-era alias for extraArgs
   mods?: string[];
   overrides?: Record<string, unknown>;
 }
@@ -111,6 +115,7 @@ export function parseWorldConfigsFromJson(json: string): WorldConfig[] {
       discordServerId: entry.discordServerId ?? entry.discordId ?? '',
       adminIds: entry.adminIds || undefined,
       default: entry.default || undefined,
+      extraArgs: entry.extraArgs ?? entry.serverArgs ?? undefined,
       mods: entry.mods && entry.mods.length > 0 ? entry.mods : undefined,
       overrides: entry.overrides,
     };

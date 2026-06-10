@@ -16,7 +16,9 @@ existing monitor, and mods are wired (`bepinex-plugin` kind + Thunderstore impor
 Remaining work is operational, not architectural:
 
 - [ ] Real `config/valheim.worlds.json` (+ migrate worlds off huginbot via `cli world push`).
-- [ ] New Discord app (`config/valheim.discord.json`), register `/hugin` commands.
+- [ ] New Discord app (`config/valheim.discord.json`), register `/munin` commands. The profile is
+      personified as **Munin** (memory, the other raven) precisely so command names, persona, and
+      embeds never collide with the still-running huginbot during migration.
 - [ ] `GAME=valheim npm run deploy` → `GateStack-Valheim` alongside the AF stack.
 - [ ] Import the old mod set: `GAME=valheim npm run cli mods import <Author/Mod>` per mod.
 - [ ] Verify join-code scrape (`logPattern`) against the current server image's log format.
@@ -66,6 +68,19 @@ optional, or repurpose it.
   image must run `SKIPUPDATE=true` and update game+SML+mods as one deliberate operation, while
   Steam clients auto-update past you. The worst mod-update story of the four — run it vanilla
   first if at all.
+
+## Optional password (prereq for Core Keeper)
+
+Core Keeper has no password env — access control is the unguessable Game ID / network level.
+The contract currently makes a password mandatory in two places; the change is small:
+
+1. `EnvMap.password` becomes optional (`password?: string`) — `add_env` in `start-server.sh`
+   already skips unmapped fields, and the CDK doesn't touch it.
+2. `validateWorldConfig` drops its unconditional password requirement: require it **iff the
+   active profile maps one** — e.g. `validateWorldConfig(config, { requirePassword })` with
+   callers passing `Boolean(ACTIVE_GAME.container.envMap.password)`. Tests cover both modes.
+3. `/gate join` / the readiness embed render the password field only when the world has one
+   (`util/join-info` — likely already conditional; verify).
 
 ## The QueryStrategy carve-out (prereq for 3 & 4)
 

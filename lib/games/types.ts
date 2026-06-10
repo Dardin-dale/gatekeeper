@@ -19,7 +19,7 @@ export interface GameProfile {
 
   /**
    * Top-level Discord slash command for this game, e.g. 'gate' → `/gate start`,
-   * 'hugin' → `/hugin start`. The subcommand set (start/stop/status/hail/join/
+   * 'munin' → `/munin start`. The subcommand set (start/stop/status/hail/join/
    * setup/help) is identical across games; only this namespace word differs.
    * It's the router key: a single-game deploy registers just this command; a
    * future omni deploy (one Discord app, many games) registers each game's

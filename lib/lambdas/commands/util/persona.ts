@@ -7,6 +7,13 @@ import { ACTIVE_GAME } from "../../../games";
  */
 export const persona = ACTIVE_GAME.persona;
 
+/**
+ * The active game's top-level slash command, with the slash: '/gate', '/munin'.
+ * User-facing strings must use this (never a literal '/gate') so every profile's
+ * messages reference its own command.
+ */
+export const slash = `/${ACTIVE_GAME.commandName}`;
+
 /** A random first-person line for the /gate hail ping. */
 export function pickHailQuote(): string {
   const quotes = persona.hailQuotes;

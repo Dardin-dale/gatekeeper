@@ -74,6 +74,21 @@ describe('World Config Utilities', () => {
       expect(validateWorldConfig(config).some(e => e.includes('must be an array'))).toBeTruthy();
     });
 
+    test('parses extraArgs (and the huginbot serverArgs alias) through', () => {
+      const worlds = parseWorldConfigsFromJson(JSON.stringify([
+        {
+          name: 'Cross', worldName: 'CrossSave', password: 'password123',
+          discordServerId: '123456789', extraArgs: '-crossplay',
+        },
+        {
+          name: 'Legacy', worldName: 'LegacySave', password: 'password123',
+          discordServerId: '123456789', serverArgs: '-modifier combat hard',
+        },
+      ]));
+      expect(worlds[0].extraArgs).toBe('-crossplay');
+      expect(worlds[1].extraArgs).toBe('-modifier combat hard');
+    });
+
     test('parses mods through to the world config (empty list dropped)', () => {
       const worlds = parseWorldConfigsFromJson(JSON.stringify([
         {

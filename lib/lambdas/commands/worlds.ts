@@ -3,7 +3,7 @@ import { GetParameterCommand } from "@aws-sdk/client-ssm";
 import { ssmClient, getGuildDefaultWorldParam } from "../utils/aws-clients";
 import { ACTIVE_GAME } from "../../games";
 import { WORLD_CONFIGS, getDefaultWorldConfig } from "../utils/world-config";
-import { personaEmbed } from "./util/persona";
+import { personaEmbed, slash } from "./util/persona";
 import { InteractionResponseType } from "./types";
 
 /**
@@ -64,8 +64,8 @@ export async function handleWorldsCommand(guildId?: string): Promise<APIGatewayP
       title: "🌍 Worlds",
       description:
         lines.join("\n") +
-        "\n\n▶️ = what `/gate start` loads here. Start another with " +
-        "`/gate start <world>`; check a world's mods with `/gate mods <world>`.",
+        `\n\n▶️ = what \`${slash} start\` loads here. Start another with ` +
+        `\`${slash} start <world>\`; check a world's mods with \`${slash} mods <world>\`.`,
     }));
   } catch (error) {
     console.error("Error in handleWorldsCommand:", error);

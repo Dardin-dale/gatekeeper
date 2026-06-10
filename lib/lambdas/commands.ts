@@ -127,7 +127,7 @@ export async function handler(
           statusCode: 200,
           body: JSON.stringify({
             type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-            data: { content: "❌ The server isn't deployed yet (no instance ID). Try `/gate hail`." },
+            data: { content: `❌ The server isn't deployed yet (no instance ID). Try \`/${cmd} hail\`.` },
           }),
         };
       }
