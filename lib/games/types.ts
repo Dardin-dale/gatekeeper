@@ -45,6 +45,16 @@ export interface GameProfile {
    */
   queryPort: number;
 
+  /**
+   * Optional A2S fallback: an ERE matched against container logs whose latest
+   * match's LAST number is the current player count; a recent match (<5 min)
+   * also counts as liveness. Needed when a game stops answering A2S in some
+   * mode — Valheim with -crossplay switches to PlayFab networking and goes
+   * A2S-silent, but heartbeats "... is active with N player(s)" to its log.
+   * (Interim form of the QueryStrategy carve-out — see docs/GAME-CANDIDATES.md.)
+   */
+  playersLogPattern?: string;
+
   /** Default EC2 instance type (overridable via the INSTANCE_TYPE env var). */
   instanceType: string;
   /** Persistent-data EBS volume size in GB. */
@@ -171,10 +181,20 @@ export type JoinStrategy =
        * matched against container logs by the on-host monitor at first
        * liveness; the LAST whitespace-separated token of the latest match is
        * the code, written to SSM /gatekeeper/<game>/join-code for /gate join.
+       * NOTE: the pattern must INCLUDE the code itself (grep -oE extraction).
        */
       codeLogPattern?: string;
+      /** What this game's UI calls the code ('Lobby Code' for AF). Default: 'Join Code'. */
+      codeLabel?: string;
     }
-  | { type: 'join-code'; logPattern: string; hint?: string };
+  | {
+      type: 'join-code';
+      /** ERE for the code in container logs; must INCLUDE the code (see above). */
+      logPattern: string;
+      hint?: string;
+      /** What this game's UI calls the code. Default: 'Join Code'. */
+      codeLabel?: string;
+    };
 
 export interface Persona {
   /** The bot's name. e.g. 'GATEKeeper'. */

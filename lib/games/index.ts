@@ -49,13 +49,20 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     ports: profile.ports,
     queryPort: profile.queryPort,
     // ERE for the per-session lobby/join code in container logs (empty = none).
-    // The monitor scrapes it at first liveness and writes it to SSM.
-    joinCodePattern: profile.join.type === 'address' ? (profile.join.codeLogPattern ?? '') : '',
+    // The monitor scrapes it at first liveness and writes it to SSM — for
+    // address games with an optional code (AF) AND join-code games (Valheim).
+    joinCodePattern: profile.join.type === 'address'
+      ? (profile.join.codeLogPattern ?? '')
+      : profile.join.logPattern,
+    // A2S fallback: log-scraped liveness/player count (see types.ts).
+    playersLogPattern: profile.playersLogPattern ?? '',
     // Join details for the host's readiness embed, so "🟢 Server Online" renders
     // the same port + hint as /gate join and /gate status (util/join-info).
     join: profile.join.type === 'address'
-      ? { type: 'address', port: profile.join.port, hint: profile.join.hint ?? '' }
-      : { type: profile.join.type },
+      ? { type: 'address', port: profile.join.port, hint: profile.join.hint ?? '',
+          codeLabel: profile.join.codeLabel ?? 'Join Code' }
+      : { type: profile.join.type, hint: profile.join.hint ?? '',
+          codeLabel: profile.join.codeLabel ?? 'Join Code' },
     // Mod install kinds: metadata `kind` -> { targetPath, env? }. The start
     // script syncs each of the active world's mods (from the S3 library) into
     // its kind's targetPath and applies the kind env. Empty = game unmodded.

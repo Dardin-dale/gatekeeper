@@ -64,6 +64,7 @@ export const abioticFactor: GameProfile = {
     // Per-session code printed at startup, e.g. 'LogAbiotic: Warning: Session short code: OKNPD'
     // (verified against the live dedicated server's docker logs).
     codeLogPattern: 'Session short code: [A-Z0-9]+',
+    codeLabel: 'Lobby Code', // AF's Join Game dialog calls it the Lobby Code
   },
 
   // AF mods live on Nexus (no Thunderstore community / Workshop / headless

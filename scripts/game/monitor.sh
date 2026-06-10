@@ -42,10 +42,15 @@ QUERY_PORT=$(jq -r '.queryPort' "$PROFILE")
 GAME_PORT=$(jq -r '.ports[0].from' "$PROFILE")
 CONTAINER_NAME=$(jq -r '.containerName' "$PROFILE")
 JOIN_CODE_PATTERN=$(jq -r '.joinCodePattern // empty' "$PROFILE")
+# A2S fallback (e.g. Valheim -crossplay goes A2S-silent): an ERE whose latest
+# log match carries the player count as its last number; a match within the
+# last 5 minutes also counts as liveness.
+PLAYERS_LOG_PATTERN=$(jq -r '.playersLogPattern // empty' "$PROFILE")
 # Join port + hint for the readiness embed (mirrors /gate join + status). Port
 # falls back to the first game port; hint is the game's connect instructions.
 JOIN_PORT=$(jq -r '.join.port // .ports[0].from' "$PROFILE")
 JOIN_HINT=$(jq -r '.join.hint // empty' "$PROFILE")
+CODE_LABEL=$(jq -r '.join.codeLabel // "Join Code"' "$PROFILE")
 NAMESPACE="GameServer"
 PLAYER_COUNT_PARAM="/gatekeeper/${GAME_ID}/player-count"
 AUTO_SHUTDOWN_PARAM="/gatekeeper/${GAME_ID}/auto-shutdown-minutes"
@@ -108,6 +113,14 @@ while true; do
     LIVE=true
     PLAYERS=$(echo "$OUT" | sed 's/^LIVE //' | jq -r '.players // 0' 2>/dev/null)
     [[ "$PLAYERS" =~ ^[0-9]+$ ]] || PLAYERS=0
+  elif [ -n "$PLAYERS_LOG_PATTERN" ]; then
+    # A2S silent — fall back to the game's log heartbeat (last 5 minutes).
+    MATCH=$(docker logs --since 5m "$CONTAINER_NAME" 2>&1 | grep -oE "$PLAYERS_LOG_PATTERN" | tail -1)
+    if [ -n "$MATCH" ]; then
+      LIVE=true
+      PLAYERS=$(echo "$MATCH" | grep -oE '[0-9]+' | tail -1)
+      [[ "$PLAYERS" =~ ^[0-9]+$ ]] || PLAYERS=0
+    fi
   fi
 
   # --- Readiness: first transition to live this session ---
@@ -140,11 +153,11 @@ while true; do
       # spoiler-wrapped (||…||). Built with jq string interpolation rather than
       # `+` concat — jq 1.7 mis-parses concatenating a backtick string.
       JOIN_FIELDS=$(jq -n --arg host "$JOIN_HOST" --arg port "$JOIN_PORT" \
-        --arg pw "$SERVER_PASSWORD" --arg code "$JOIN_CODE" '
+        --arg pw "$SERVER_PASSWORD" --arg code "$JOIN_CODE" --arg codeLabel "$CODE_LABEL" '
         [ {name: "🌐 Address", value: "```\n\($host)\n```", inline: false},
           {name: "🔌 Port",    value: "```\n\($port)\n```", inline: true} ]
         + (if $pw   != "" then [{name: "🔑 Password",   value: "||```\n\($pw)\n```||", inline: true}] else [] end)
-        + (if $code != "" then [{name: "🎟️ Lobby Code", value: "```\n\($code)\n```", inline: true}] else [] end)')
+        + (if $code != "" then [{name: "🎟️ \($codeLabel)", value: "```\n\($code)\n```", inline: true}] else [] end)')
       DESC="${JOIN_HINT:-The facility is live — connect with the details below.}"
       post_discord "🟢 Server Online" "$DESC" 3776160 "$JOIN_FIELDS"
     fi

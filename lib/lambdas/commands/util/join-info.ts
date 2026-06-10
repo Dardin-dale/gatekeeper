@@ -25,12 +25,15 @@ export function joinHint(): string | undefined {
 /**
  * The game's join info as embed fields — the ONE place the per-game join
  * format is rendered, shared by /gate join and /gate status:
- * address / port / password (spoiler-wrapped) / per-session lobby code,
- * each as a copyable fenced block. Empty for join-code-only games (their
- * code is posted to the channel by the host monitor).
+ * address / port / password (spoiler-wrapped) / per-session join code,
+ * each as a copyable fenced block. Join-code games get the SAME full set —
+ * address+password serve direct connect / Steam favorites, the code serves
+ * crossplay — so nothing about how to join lives only in the readiness ping.
  */
 export async function buildJoinFields(host: string): Promise<EmbedField[]> {
-  if (ACTIVE_GAME.join.type !== "address") return [];
+  const joinPort = ACTIVE_GAME.join.type === "address"
+    ? ACTIVE_GAME.join.port
+    : ACTIVE_GAME.ports[0].from;
 
   // The active world's password (players need it for direct connect).
   let password: string | undefined;
@@ -61,9 +64,12 @@ export async function buildJoinFields(host: string): Promise<EmbedField[]> {
     // Full-width: domains don't fit Discord's narrow 3-per-row inline fields
     // without ugly wrapping inside the code block.
     { name: "🌐 Address", value: copyable(host), inline: false },
-    { name: "🔌 Port", value: copyable(ACTIVE_GAME.join.port), inline: true },
+    { name: "🔌 Port", value: copyable(joinPort), inline: true },
     // Spoiler-wrapped so screenshots/streams don't leak it — click to reveal.
     ...(password ? [{ name: "🔑 Password", value: `||${copyable(password)}||`, inline: true }] : []),
-    ...(lobbyCode ? [{ name: "🎟️ Lobby Code", value: copyable(lobbyCode), inline: true }] : []),
+    // Label is per-game UI wording: AF says "Lobby Code", Valheim "Join Code".
+    ...(lobbyCode
+      ? [{ name: `🎟️ ${ACTIVE_GAME.join.codeLabel ?? "Join Code"}`, value: copyable(lobbyCode), inline: true }]
+      : []),
   ];
 }

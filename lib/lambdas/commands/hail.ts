@@ -4,11 +4,12 @@ import { persona, pickHailQuote, personaEmbed } from "./util/persona";
 
 /**
  * /gate hail — the ping test. Returns an in-character line for the active game's
- * persona (a recorded Dr. Derek Manse hologram for Abiotic Factor).
+ * persona. The title is just the character: any game-flavored framing (e.g.
+ * "Hologram:" for AF's Manse) belongs in the persona's own quotes, not here.
  */
 export async function handleHailCommand(): Promise<APIGatewayProxyResult> {
   const embed = personaEmbed({
-    title: `📽️ Hologram: ${persona.characterName}`,
+    title: persona.characterName,
     description: pickHailQuote(),
     withThumbnail: true, // the showpiece — full character portrait
   });

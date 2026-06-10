@@ -38,14 +38,22 @@ export const valheim: GameProfile = {
   instanceType: 't3.medium',
   dataVolumeSizeGb: 12,
 
-  // Valheim answers A2S on its query port (2457) like any Steam server, so the
-  // generic poller monitors it; only its crossplay join CODE is the carve-out.
+  // ⚠️ With -crossplay (our worlds use it) Valheim switches to PlayFab
+  // networking and does NOT answer A2S on 2457 — verified live on the first
+  // GateStack-Valheim boot. Liveness + player count come from the session
+  // heartbeat it writes to its log instead (playersLogPattern). A2S works
+  // only on Steam-only (no -crossplay) servers.
+  playersLogPattern: 'is active with [0-9]+ player|now [0-9]+ player',
+
   // In practice players save the server once and reuse it: Steam → View →
   // Game Servers → Favorites with <domain>:2457 remembers the password after
   // the first join — the derived domain makes that favorite stable.
   join: {
     type: 'join-code',
-    logPattern: '(with|has|that has) join code',
+    // The scraper takes the last token of the latest MATCH (grep -oE), so the
+    // pattern must include the digits: "... registered with join code 487341".
+    logPattern: 'join code [0-9]+',
+    codeLabel: 'Join Code', // Valheim's crossplay UI wording
     hint: 'Save the server in Steam favorites (View → Game Servers → Favorites) using its address — ' +
       'Steam remembers the password after the first join. Or use the crossplay join code posted ' +
       'here when the server comes online.',
