@@ -1,0 +1,6 @@
+{
+  "_comment": "Per-game Discord application credentials for the Valheim deploy (the MUNIN bot — a NEW Discord app, distinct from the legacy huginbot's, so /munin never collides with it). Copy to valheim.discord.json (gitignored) and fill in from the Discord Developer Portal: Application ID + Public Key from General Information, Bot Token from the Bot tab (Reset Token). Falls back to .env (DISCORD_APP_ID / DISCORD_BOT_PUBLIC_KEY / DISCORD_BOT_SECRET_TOKEN) when this file is absent.",
+  "appId": "000000000000000000",
+  "publicKey": "0000000000000000000000000000000000000000000000000000000000000000",
+  "botToken": "your-munin-bot-token-here"
+}
