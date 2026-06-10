@@ -21,6 +21,8 @@ export const valheim: GameProfile = {
       serverName: 'SERVER_NAME',
       worldName: 'WORLD_NAME',
       password: 'SERVER_PASS',
+      // Space-separated SteamID64s -> the image writes adminlist.txt.
+      adminIds: 'ADMINLIST_IDS',
       extraArgs: 'SERVER_ARGS',
     },
     volumes: [{ hostPath: '/mnt/game-data/config', containerPath: '/config' }],
