@@ -9,19 +9,20 @@ the flagged items at implementation time (Tier-2 local Docker test before any de
 Satisfactory are documented for later — both need the monitor's one structural change
 (a pluggable query strategy).
 
-## 1. Valheim — full port (currently a stub)
+## 1. Valheim — ✅ DEPLOYED (2026-06-10, `GateStack-Valheim` / MuninBot)
 
-Everything is already proven: the profile stub is faithful, A2S on 2457 works with the
-existing monitor, and mods are wired (`bepinex-plugin` kind + Thunderstore import in the CLI).
-Remaining work is operational, not architectural:
+Live and verified end-to-end: GjurdsIHOP migrated from the huginbot backup, BetterNetworking
+via the mods pipeline, `/munin` commands, presence sidecar, full start→play→stop→offline cycle.
 
-- [ ] Real `config/valheim.worlds.json` (+ migrate worlds off huginbot via `cli world push`).
-- [ ] New Discord app (`config/valheim.discord.json`), register `/munin` commands. The profile is
-      personified as **Munin** (memory, the other raven) precisely so command names, persona, and
-      embeds never collide with the still-running huginbot during migration.
-- [ ] `GAME=valheim npm run deploy` → `GateStack-Valheim` alongside the AF stack.
-- [ ] Import the old mod set: `GAME=valheim npm run cli mods import <Author/Mod>` per mod.
-- [ ] Verify join-code scrape (`logPattern`) against the current server image's log format.
+- [x] `config/valheim.worlds.json` (GjurdsIHOP w/ adminIds, `-crossplay -modifier resources more`).
+- [x] Munin Discord app + `/munin` registered (Munin = memory, the other raven — zero collision
+      with the legacy huginbot during migration).
+- [x] Deployed; worlds seeded via `cli world push/restore` from the May 20 huginbot backup.
+- [x] `cli mods import CW_Jesse/BetterNetworking_Valheim` — installed by the host on world start.
+- [x] Join-code scrape verified (pattern needed the digits: `'join code [0-9]+'`).
+- [x] **Field lesson:** with `-crossplay` Valheim is **A2S-silent** (PlayFab networking) — liveness
+      + player count come from the log heartbeat (`playersLogPattern`), the first real use of the
+      logs arm of the query-strategy idea below.
 - [ ] Retire/destroy the huginbot stack once stable (its RETAIN'd EBS keeps the old worlds).
 
 ## 2. Core Keeper — fits the contract today
