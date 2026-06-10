@@ -164,15 +164,23 @@ add_env "$(jq -r '.envMap.adminIds // empty'   "$PROFILE")" "$ADMIN_IDS"
 ALL_ARGS=$(echo "${DEFAULT_ARGS} ${EXTRA_ARGS}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
 add_env "$(jq -r '.envMap.extraArgs // empty' "$PROFILE")" "$ALL_ARGS"
 
-# Ports: each profile port range, plus the Steam A2S query port.
+# Ports: each profile port range, plus the Steam A2S query port — unless a UDP
+# range already covers it (Valheim: query 2457 sits inside 2456-2458; publishing
+# the same port twice fails `docker run` with "port is already allocated").
+QUERY_COVERED=0
 while IFS=$'\t' read -r proto from to; do
   if [ "$from" = "$to" ]; then
     PORT_ARGS+=( -p "${from}:${from}/${proto}" )
   else
     PORT_ARGS+=( -p "${from}-${to}:${from}-${to}/${proto}" )
   fi
+  if [ "$proto" = "udp" ] && [ "$from" -le "$QUERY_PORT" ] && [ "$QUERY_PORT" -le "$to" ]; then
+    QUERY_COVERED=1
+  fi
 done < <(jq -r '.ports[] | [.protocol, .from, .to] | @tsv' "$PROFILE")
-PORT_ARGS+=( -p "${QUERY_PORT}:${QUERY_PORT}/udp" )
+if [ "$QUERY_COVERED" = "0" ]; then
+  PORT_ARGS+=( -p "${QUERY_PORT}:${QUERY_PORT}/udp" )
+fi
 
 # Volumes: persistent data bind mounts (host dirs live on the RETAIN'd EBS).
 while IFS=$'\t' read -r host cont; do

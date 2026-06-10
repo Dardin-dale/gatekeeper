@@ -421,8 +421,13 @@ EOF`,
             "systemctl daemon-reload",
             "systemctl enable game-server.service",
             "systemctl enable game-monitor.service",
+            // Discord presence sidecar (bot online + player count while the
+            // server runs). No-ops cleanly until the bot token is seeded via
+            // `cli discord put-token`.
+            "systemctl enable game-presence.service",
             "systemctl start game-server.service",
-            "systemctl start game-monitor.service"
+            "systemctl start game-monitor.service",
+            "systemctl start game-presence.service"
         );
 
         // Create standalone EBS volume for game data
@@ -472,7 +477,7 @@ EOF`,
             properties: {
                 VolumeId: dataVolume.ref,
                 // Trigger update when deployment version changes
-                DeploymentVersion: '2026-06-09-v4',
+                DeploymentVersion: '2026-06-10-v5',
             },
         });
 
@@ -509,7 +514,7 @@ EOF`,
         });
 
         // Add deployment version tag to force replacement when needed
-        Tags.of(this.ec2Instance).add('DeploymentVersion', '2026-06-09-v4');
+        Tags.of(this.ec2Instance).add('DeploymentVersion', '2026-06-10-v5');
 
         // Ensure volume is detached from old instances before new instance is created
         this.ec2Instance.node.addDependency(volumeDetach);

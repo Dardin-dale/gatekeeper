@@ -1,0 +1,21 @@
+[Unit]
+Description=GATEKeeper Discord presence (bot online + player count while the server runs)
+After=docker.service network-online.target game-server.service
+Wants=network-online.target
+# Presence IS server status: start/stop/restart with the game server.
+PartOf=game-server.service
+
+[Service]
+Type=simple
+# AL2023's Node 18 has no built-in WebSocket client; fetch 'ws' once (idempotent,
+# survives restarts on the same instance — it's just node_modules on the root vol).
+ExecStartPre=/bin/bash -c 'mkdir -p /opt/gatekeeper-presence && cd /opt/gatekeeper-presence && [ -d node_modules/ws ] || npm install --no-save --no-audit --no-fund ws@8'
+Environment=NODE_PATH=/opt/gatekeeper-presence/node_modules
+ExecStart=/usr/bin/node /usr/local/bin/presence.js
+# presence.js exits 0 on fatal conditions (no token, bad token) and handles its
+# own gateway reconnects; on-failure covers crashes only.
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

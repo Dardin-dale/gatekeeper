@@ -8,6 +8,7 @@
 const backup = require('./commands/backup');
 const world = require('./commands/world');
 const mods = require('./commands/mods');
+const discord = require('./commands/discord');
 const { GAME_ID, STACK_NAME } = require('./lib/context');
 
 function usage() {
@@ -28,6 +29,8 @@ Usage:
   npm run cli mods import <Ns/Mod[@ver]>     Import from Thunderstore (games with a community)
   npm run cli mods info <name>               Show a mod's metadata
   npm run cli mods remove <name>             Remove a mod from the library
+
+  npm run cli discord put-token              Seed the bot token to SSM (presence sidecar)
 
 Notes:
   - Server start/stop/status are Discord commands: /gate start | stop | status
@@ -57,6 +60,10 @@ async function main() {
     if (sub === 'import') return mods.importMod(...rest);
     if (sub === 'info') return mods.info(rest[0]);
     if (sub === 'remove') return mods.remove(rest[0]);
+  }
+
+  if (group === 'discord') {
+    if (sub === 'put-token') return discord.putToken();
   }
 
   usage();
