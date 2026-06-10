@@ -1,22 +1,27 @@
 # GATEKeeper
 
-A cost-effective, AWS-based **Abiotic Factor** dedicated-server manager with Discord integration.
-Start, stop, and join your server straight from Discord — and only pay for the hours you actually play.
+A cost-effective, **multi-game** AWS dedicated-server manager with Discord integration.
+Start, stop, mod, and join your co-op servers straight from Discord — and only pay for the hours
+you actually play. Each game gets its own bot persona, stack, and slash command.
 
 > *"This is a recorded message from Director Manse. The Cascade facility is online."*
-> GATEKeeper speaks as **Dr. Derek Manse**, Director of Research of the GATE Cascade facility.
+> The Abiotic Factor bot speaks as **Dr. Derek Manse**; the Valheim bot is **Munin**, the
+> All-Father's memory raven.
 
-> **Status: deployed and live** (Abiotic Factor on `GateStack-AbioticFactor`). Adapted from
-> [huginbot](https://github.com/Dardin-dale/huginbot) (a Valheim server manager) onto a generic,
-> multi-game backbone. Next up: per-world mods (implemented, first deploy pending) and more games —
-> see `docs/DEVELOPMENT-PLAN.md` and `docs/GAME-CANDIDATES.md`.
+> **Status: two games live** — Abiotic Factor (`GateStack-AbioticFactor`, `/gate`) and Valheim
+> (`GateStack-Valheim`, `/munin`), each with per-world mods and a presence sidecar. Adapted from
+> [huginbot](https://github.com/Dardin-dale/huginbot) (a Valheim-only predecessor) onto a generic
+> `GameProfile` backbone. Roadmap: `docs/DEVELOPMENT-PLAN.md`; next games: `docs/GAME-CANDIDATES.md`.
 
 ## What it does
 
 - **Discord control** — manage the server with `/gate` slash commands (`start`, `stop`, `status`, `join`)
 - **Pay only while playing** — the server auto-stops after a configurable idle timeout (default 20 min);
   a stopped EC2 instance costs ~$0 for compute
-- **Player-aware auto-shutdown** — idle detection via Steam **A2S** query (no log scraping)
+- **Player-aware auto-shutdown** — idle detection via Steam **A2S** query, with a profile-driven
+  log-heartbeat fallback for games that go A2S-silent (crossplay Valheim runs on PlayFab networking)
+- **Bot presence = server status** — a sidecar on the host keeps the bot **online in Discord**
+  with a live "Playing <game> (N online)" activity while the server runs; grey means stopped
 - **Stable join address** — connect via `your-subdomain.example.net:7777` (Route 53) instead of a changing IP
 - **World backups** — scheduled snapshots to S3, downloadable to local disk via the CLI
 - **Per-world mods** — an S3 mod library + a `mods` list per world; the host installs them on world
@@ -28,23 +33,26 @@ Start, stop, and join your server straight from Discord — and only pay for the
 
 ```
 Discord ──▶ API Gateway ──▶ Lambda ──▶ EC2 (Docker)
-                              │          └─ Abiotic Factor dedicated server (Wine)
+                              │          ├─ game dedicated server (from the GameProfile)
+                              │          ├─ monitor (A2S/log liveness, idle shutdown, pings)
+                              │          └─ presence sidecar (bot online while server runs)
                               ├─▶ SSM Parameter Store  (/gatekeeper/<game>/… config + state)
-                              └─▶ S3                    (world backups)
+                              └─▶ S3                    (world backups + mod library + scripts)
 ```
 
-- **EC2** runs the Abiotic Factor Windows server under Wine in a Docker container
+- **EC2** runs the game's dedicated server in Docker (AF: Windows server under Wine;
+  Valheim: native Linux image), plus the profile-driven monitor and presence sidecar
 - **Lambda** handles Discord interactions (Ed25519-verified) and server lifecycle
 - **SSM** holds per-game config/state under `/gatekeeper/<game>/…`
-- **S3** stores world backups
+- **S3** stores world backups, the per-game mod library, and the host scripts (synced at boot)
 
 ### Multi-game model
 
 One parameterized stack, deployed **once per game**, each fully isolated:
 
 ```
-GAME=abiotic-factor  →  GateStack-AbioticFactor   (own EC2 / EBS / buckets / SSM subtree)
-GAME=valheim         →  GateStack-Valheim         (later — just add a profile)
+GAME=abiotic-factor  →  GateStack-AbioticFactor   (Dr. Manse, /gate  — own EC2/EBS/buckets/SSM subtree)
+GAME=valheim         →  GateStack-Valheim         (Munin,    /munin — fully isolated second stack)
 ```
 
 The **`GAME` env var is the single game selector** for every tool — the CDK deploy (stack name),
@@ -123,6 +131,7 @@ npm run cli world restore [name|latest]    # load a seed onto the running server
 npm run cli mods list                      # the S3 mod library (docs/mods.md)
 npm run cli mods add <zip> [name]          # ingest a downloaded mod (e.g. from Nexus)
 npm run cli mods import <Ns/Mod>           # pull from Thunderstore (games with a community)
+npm run cli discord put-token              # seed the bot token to SSM (presence sidecar)
 ```
 
 See `docs/cli.md` (including the save layout for seeding a friend's world).

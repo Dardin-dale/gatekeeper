@@ -111,8 +111,8 @@ no always-on EventBridge.
       `restApiName` *property* is safe to change in place, but renaming the *construct ID* REPLACES
       the API Gateway → new endpoint URL → re-wire the Discord Interactions Endpoint URL after.
       Do it alongside some other instance-replacing change, not casually.
-- [ ] **Real deploy** (`npm run deploy`) → set Discord Interactions Endpoint → `/gate setup` → `/gate start`
-      → connect from the AF client → confirm idle auto-shutdown.
+- [x] **Real deploy** — live and operating (AL2023 host; IMDSv2 ping fix debugged against the
+      running instance). Redeployed 2026-06-10 onto the Phase-9 baseline.
 
 ### Phase 7 — Profile-driven mods (implemented; first deploy pending)
 Mods return as generic infrastructure (Phase 3 deliberately dropped the Valheim-specific
@@ -131,14 +131,38 @@ BepInEx scripts; this is their multi-game replacement). See `docs/mods.md` for t
       so AF mods are download-then-`add`).
 - [x] **Discord** — `/gate mods [world]` (mod list + portal links + client-install warning) and
       `/gate worlds` (startable worlds, default marker, mod counts).
-- [ ] **Tier-2 validation** — local compose run with a real pak mod (verify load + clean removal),
-      then a deployed AF world with one mod.
+- [x] **Production validation (bepinex kind)** — BetterNetworking_Valheim installs per-world on
+      the live Valheim stack (manifest sync verified in the host journal).
+- [ ] **Tier-2 validation (pak kind)** — local compose run with a real AF pak mod (verify load +
+      clean removal), then a deployed AF world with one mod. The AF library is still empty.
 
-### Phase 8 — Next games (planned)
-Priorities + contract findings in `docs/GAME-CANDIDATES.md`: **Valheim full port** (retire
-huginbot — operational only, the profile/mods are ready), then **Core Keeper** (fits the contract;
-A2S at port+1 in direct-connect mode, official mod.io SDK mods as one new kind). Factorio /
-Satisfactory deferred — both need the `QueryStrategy` carve-out (no A2S; RCON / HTTPS API).
+### Phase 8 — Valheim port ✅ DEPLOYED (2026-06-10)
+`GateStack-Valheim` is live as **MuninBot** (`/munin`) — Munin, the *other* raven, so commands and
+persona never collide with the legacy huginbot during migration. GjurdsIHOP migrated from the
+huginbot backup (`cli world push/restore`), BetterNetworking via `cli mods import`, adminIds mapped
+to `ADMINLIST_IDS`, per-world `extraArgs` (`-crossplay -modifier resources more`). Full
+start→play→stop→offline cycle verified in Discord. Checklist + field notes: `docs/GAME-CANDIDATES.md`.
+Remaining: retire the huginbot stack once Munin has earned trust. **Next game: Core Keeper**
+(prereq: optional-password contract change; design in GAME-CANDIDATES).
+
+### Phase 9 — Presence + crossplay monitoring (✅ 2026-06-10, shipped with the Valheim deploy)
+- [x] **Presence sidecar** (`presence.js` + `game-presence.service`): a gateway connection from the
+      host keeps each bot ONLINE in Discord with "Playing <game> (N online)" — serverless
+      interactions can't hold one, which is why bots looked offline. `PartOf game-server.service`,
+      so presence ⇔ server status. Token seeded once per game via `cli discord put-token`
+      (SecureString; CFN can't create those).
+- [x] **Crossplay Valheim is A2S-SILENT** (PlayFab networking) — found live when the monitor never
+      saw the healthy server and the boot-timeout nearly stopped it. Fix: profile-driven
+      `playersLogPattern` log-heartbeat fallback (liveness = match <5 min; count = last number).
+      A2S stays the primary path. This is the `logs` arm of the QueryStrategy idea, landed early.
+- [x] **Join rendering generalized**: join-code games get the full address/password/code field set;
+      `codeLabel` ("Lobby Code" AF / "Join Code" Valheim) and `addressWithPort` (Valheim's one-box
+      `host:port`) are profile fields; the scrape pattern must include the code (`'join code [0-9]+'`).
+- [x] **Persona polish**: lifecycle flavor lines per persona (`Persona.lines` — no more facility-speak
+      from Munin), embed de-dup vs. the Discord app's own theming (thumbnail opt-in, no botName
+      footer prefix, byline off for webhook posts), `/hail` title de-AF'd.
+- [x] **Fix:** don't publish the A2S query port separately when a UDP range covers it (Valheim's
+      2457 ⊂ 2456-2458 → Docker "port is already allocated" broke the first boot).
 
 ---
 
@@ -154,7 +178,8 @@ the self-hosted URL, with `persona.thumbnailUrl` as the fallback override. Makes
 self-contained on AWS (no wiki/GitHub dependency) and is the prerequisite for the bot to *post as*
 Dr. Manse (avatar) rather than just show the thumbnail.
 
-### Multi-game model — DECIDED: Model A (one Discord app + one stack per game)
+### Multi-game model — DECIDED: Model A (one Discord app + one stack per game) — PROVEN IN PROD
+Both stacks live side-by-side since 2026-06-10 (GateStack-AbioticFactor + GateStack-Valheim).
 Each game is its own Discord app **and** its own `GateStack-<Pascal>` (own EC2/EBS/API/Lambda/SSM
 subtree), deployed independently. Chosen for its simplicity and cost isolation: spinning up a Discord
 app per game is trivial, and a game you aren't playing costs ~$0 (instance auto-stops; `cdk destroy`
@@ -175,7 +200,7 @@ so adopting it later is additive, not a rewrite.
 ---
 
 ## Testing strategy (tiers)
-1. **Unit (Jest)** — dispatch, profile registry, world config, A2S parse. Fast, no AWS. *(85 passing)*
+1. **Unit (Jest)** — dispatch, profile registry, world config, mods, A2S parse. Fast, no AWS. *(86 passing)*
 2. **Local Docker** — `docker-compose.local.yml` + `a2s-query.js`. Validates the runtime with no AWS spend. *(✅ passing)*
 3. **ngrok** — `npm run local-dev` behind a tunnel to test real Discord interactions without deploying.
 4. **Deploy** — the isolated `GateStack-AbioticFactor`; only EC2/Route53/API-Gateway need this.

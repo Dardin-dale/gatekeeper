@@ -42,6 +42,11 @@ lib/games/
   `game-profile.json` + the active world from SSM and issues the `docker run`. `game-monitor.service`
   → `scripts/game/monitor.sh` queries **Steam A2S on localhost** for player count + liveness, writes
   the count to SSM/CloudWatch, posts a readiness ping, and stops the instance when idle.
+  ⚠️ Crossplay Valheim is **A2S-silent** (PlayFab) — the monitor falls back to the profile's
+  `playersLogPattern` log heartbeat for liveness + player count.
+- **Presence sidecar**: `game-presence.service` → `scripts/game/presence.js` holds a Discord
+  gateway connection so the bot shows ONLINE ("Playing <game> (N online)") while the server runs
+  (`PartOf game-server.service`). Bot token seeded once per game: `npm run cli discord put-token`.
 - **Scripts ship via S3**, not baked into an AMI: `update-gatekeeper-scripts.service` syncs
   `scripts/game/` (+ `game-profile.json`) from the backup bucket on boot.
 - **Discord HTTP interactions** hit API Gateway → the commands Lambda (Ed25519-verified). One
