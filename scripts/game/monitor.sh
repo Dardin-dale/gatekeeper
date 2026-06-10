@@ -23,8 +23,18 @@ LIVE_STATE_FILE=/tmp/gk_live       # "1" while last cycle was live (edge detecti
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"; }
 
-REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/placement/region)
-INSTANCE_ID=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/instance-id)
+# IMDSv2-aware metadata fetch. AL2023 enforces HttpTokens=required, so bare
+# IMDSv1 curls 401; fetch a token first (still works where IMDSv1 is optional).
+imds() {
+  local t
+  t=$(curl -s -m 5 -X PUT http://169.254.169.254/latest/api/token \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+  curl -s -m 5 -H "X-aws-ec2-metadata-token: $t" \
+        "http://169.254.169.254/latest/meta-data/$1"
+}
+
+REGION=$(imds placement/region)
+INSTANCE_ID=$(imds instance-id)
 [ -z "$REGION" ] && { log "ERROR: no region from metadata"; exit 1; }
 
 GAME_ID=$(jq -r '.id' "$PROFILE")
@@ -32,6 +42,10 @@ QUERY_PORT=$(jq -r '.queryPort' "$PROFILE")
 GAME_PORT=$(jq -r '.ports[0].from' "$PROFILE")
 CONTAINER_NAME=$(jq -r '.containerName' "$PROFILE")
 JOIN_CODE_PATTERN=$(jq -r '.joinCodePattern // empty' "$PROFILE")
+# Join port + hint for the readiness embed (mirrors /gate join + status). Port
+# falls back to the first game port; hint is the game's connect instructions.
+JOIN_PORT=$(jq -r '.join.port // .ports[0].from' "$PROFILE")
+JOIN_HINT=$(jq -r '.join.hint // empty' "$PROFILE")
 NAMESPACE="GameServer"
 PLAYER_COUNT_PARAM="/gatekeeper/${GAME_ID}/player-count"
 AUTO_SHUTDOWN_PARAM="/gatekeeper/${GAME_ID}/auto-shutdown-minutes"
@@ -60,14 +74,15 @@ get_webhook_url() {
 PERSONA_NAME=$(jq -r '.persona.characterName // "GATEKeeper"' "$PROFILE")
 PERSONA_AVATAR=$(jq -r '.persona.thumbnailUrl // empty' "$PROFILE")
 
-post_discord() { # $1 = title, $2 = description, $3 = color (decimal)
+post_discord() { # $1 = title, $2 = description, $3 = color (decimal), $4 = optional JSON embed-fields array
   local url; url=$(get_webhook_url) || { log "no webhook configured; skipping Discord post"; return 0; }
   [ -z "$url" ] || [ "$url" = "None" ] && { log "no webhook configured; skipping Discord post"; return 0; }
   # Build the payload with jq so the name/avatar/text are safely JSON-escaped.
   local payload
   payload=$(jq -n --arg name "$PERSONA_NAME" --arg avatar "$PERSONA_AVATAR" \
-    --arg title "$1" --arg desc "$2" --argjson color "$3" \
+    --arg title "$1" --arg desc "$2" --argjson color "$3" --argjson fields "${4:-[]}" \
     '{username: $name, embeds: [{author: {name: $name}, title: $title, description: $desc, color: $color, footer: {text: "GATE Cascade Research Facility"}}]}
+     | if ($fields | length) > 0 then .embeds[0].fields = $fields else . end
      | if $avatar != "" then .avatar_url = $avatar | .embeds[0].author.icon_url = $avatar else . end')
   curl -s -m 10 -H "Content-Type: application/json" -X POST "$url" -d "$payload" \
     > /dev/null 2>&1 || log "WARNING: Discord post failed"
@@ -100,7 +115,7 @@ while true; do
       touch "$SEEN_LIVE_FLAG"
       # Prefer the stable derived domain; fall back to the public IP.
       JOIN_HOST="${GAME_DOMAIN:-}"
-      [ -z "$JOIN_HOST" ] && JOIN_HOST=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/public-ipv4)
+      [ -z "$JOIN_HOST" ] && JOIN_HOST=$(imds public-ipv4)
       # Per-session lobby/join code: scrape the container logs (pattern from the
       # profile; the code is the last token of the latest match) and publish to
       # SSM so /gate join can show it. 'none' = scrape found nothing.
@@ -111,11 +126,24 @@ while true; do
           --value "${JOIN_CODE:-none}" --overwrite --region "$REGION" > /dev/null 2>&1
         log "Session join code: ${JOIN_CODE:-not found}"
       fi
-      log "Server is LIVE (first time this session) at ${JOIN_HOST}:${GAME_PORT}"
-      DESC="The facility is live. Join at \`${JOIN_HOST}:${GAME_PORT}\`"
-      [ -n "$JOIN_CODE" ] && DESC="${DESC}
-Lobby code: \`${JOIN_CODE}\` — \`/gate join\` has the password."
-      post_discord "🟢 Server Online" "$DESC" 3776160
+      log "Server is LIVE (first time this session) at ${JOIN_HOST}:${JOIN_PORT}"
+      # The active world's password (players need it for Direct Connect).
+      SERVER_PASSWORD=$(aws ssm get-parameter --name "$ACTIVE_WORLD_PARAM" --region "$REGION" \
+        --query "Parameter.Value" --output text 2>/dev/null | jq -r '.serverPassword // empty' 2>/dev/null)
+      # Build the SAME copyable join fields /gate join + /gate status render
+      # (util/join-info): Address full-width, then Port / Password (spoiler-
+      # wrapped) / Lobby Code inline. Password & code included only when present.
+      # Fenced blocks (```…```) get Discord's native Copy button; password is
+      # spoiler-wrapped (||…||). Built with jq string interpolation rather than
+      # `+` concat — jq 1.7 mis-parses concatenating a backtick string.
+      JOIN_FIELDS=$(jq -n --arg host "$JOIN_HOST" --arg port "$JOIN_PORT" \
+        --arg pw "$SERVER_PASSWORD" --arg code "$JOIN_CODE" '
+        [ {name: "🌐 Address", value: "```\n\($host)\n```", inline: false},
+          {name: "🔌 Port",    value: "```\n\($port)\n```", inline: true} ]
+        + (if $pw   != "" then [{name: "🔑 Password",   value: "||```\n\($pw)\n```||", inline: true}] else [] end)
+        + (if $code != "" then [{name: "🎟️ Lobby Code", value: "```\n\($code)\n```", inline: true}] else [] end)')
+      DESC="${JOIN_HINT:-The facility is live — connect with the details below.}"
+      post_discord "🟢 Server Online" "$DESC" 3776160 "$JOIN_FIELDS"
     fi
   else
     rm -f "$LIVE_STATE_FILE"

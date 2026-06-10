@@ -50,6 +50,11 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     // ERE for the per-session lobby/join code in container logs (empty = none).
     // The monitor scrapes it at first liveness and writes it to SSM.
     joinCodePattern: profile.join.type === 'address' ? (profile.join.codeLogPattern ?? '') : '',
+    // Join details for the host's readiness embed, so "🟢 Server Online" renders
+    // the same port + hint as /gate join and /gate status (util/join-info).
+    join: profile.join.type === 'address'
+      ? { type: 'address', port: profile.join.port, hint: profile.join.hint ?? '' }
+      : { type: profile.join.type },
     // Just enough persona for the host's webhook posts to come from the character
     // in full (e.g. Dr. Derek Manse) with his avatar — matches the lambda embeds.
     persona: {

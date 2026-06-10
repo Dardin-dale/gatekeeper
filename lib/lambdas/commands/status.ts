@@ -85,7 +85,7 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
       autoShutdownMinutes = shutdownResult.Parameter?.Value;
     } catch (err) {
       console.log('Auto-shutdown parameter not found, using default');
-      autoShutdownMinutes = '20';
+      autoShutdownMinutes = '15';
     }
 
     // Determine server state

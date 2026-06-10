@@ -19,6 +19,15 @@ CONF=/etc/gatekeeper.conf
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"; }
 
+# IMDSv2-aware metadata fetch (AL2023 enforces token auth; works on optional too).
+imds() {
+  local t
+  t=$(curl -s -m 5 -X PUT http://169.254.169.254/latest/api/token \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+  curl -s -m 5 -H "X-aws-ec2-metadata-token: $t" \
+        "http://169.254.169.254/latest/meta-data/$1"
+}
+
 KEY="${1:-}"
 if [ -z "$KEY" ]; then
   echo "Usage: restore-world.sh <s3-key>  (e.g. bootstrap/abiotic-factor/seed.tar.gz)"
@@ -26,7 +35,7 @@ if [ -z "$KEY" ]; then
 fi
 
 [ -f "$CONF" ] && source "$CONF"
-REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/placement/region)
+REGION=$(imds placement/region)
 BUCKET="${GATEKEEPER_BUCKET:-}"
 [ -z "$BUCKET" ] && { log "ERROR: GATEKEEPER_BUCKET not set"; exit 1; }
 [ -f "$PROFILE" ] || { log "ERROR: game profile not found: $PROFILE"; exit 1; }

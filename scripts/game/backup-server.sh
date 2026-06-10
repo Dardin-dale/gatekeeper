@@ -21,8 +21,17 @@ CONF=/etc/gatekeeper.conf
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"; }
 
+# IMDSv2-aware metadata fetch (AL2023 enforces token auth; works on optional too).
+imds() {
+  local t
+  t=$(curl -s -m 5 -X PUT http://169.254.169.254/latest/api/token \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+  curl -s -m 5 -H "X-aws-ec2-metadata-token: $t" \
+        "http://169.254.169.254/latest/meta-data/$1"
+}
+
 [ -f "$CONF" ] && source "$CONF"
-REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/placement/region)
+REGION=$(imds placement/region)
 BUCKET="${GATEKEEPER_BUCKET:-}"
 [ -z "$BUCKET" ] && { log "ERROR: GATEKEEPER_BUCKET not set"; exit 1; }
 
@@ -72,4 +81,4 @@ log "Uploading -> $DEST"
 aws s3 cp "$ARCHIVE" "$DEST" --region "$REGION"
 rm -f "$ARCHIVE"
 log "Backup complete: $DEST"
-post_discord "💾 Backup Complete" "World data archived: \`${TS}.tar.gz\` (${SIZE}). Retrieve it any time with \`backup pull\`." 3776160
+post_discord "💾 Backup Complete" "World data archived safely — \`${TS}.tar.gz\` (${SIZE}). Everyone's progress is saved." 3776160

@@ -16,7 +16,16 @@ PROFILE=/etc/gatekeeper/game-profile.json
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Starting game server"
 
-REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/placement/region)
+# IMDSv2-aware metadata fetch (AL2023 enforces token auth; works on optional too).
+imds() {
+  local t
+  t=$(curl -s -m 5 -X PUT http://169.254.169.254/latest/api/token \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+  curl -s -m 5 -H "X-aws-ec2-metadata-token: $t" \
+        "http://169.254.169.254/latest/meta-data/$1"
+}
+
+REGION=$(imds placement/region)
 if [ -z "$REGION" ]; then
   echo "ERROR: Could not determine AWS region from instance metadata"
   exit 1

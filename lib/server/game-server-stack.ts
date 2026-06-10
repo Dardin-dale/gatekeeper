@@ -159,8 +159,8 @@ export class GameServerStack extends Stack {
         const instanceType = props?.instanceType || new InstanceType(process.env.INSTANCE_TYPE || ACTIVE_GAME.instanceType);
         const dataVolumeSize = props?.dataVolumeSize || ACTIVE_GAME.dataVolumeSizeGb;
         const backupFrequencyHours = props?.backupFrequencyHours || 24;
-        const backupsToKeep = props?.backupsToKeep || 7;
-        // Note: Auto-shutdown is controlled by SSM parameter /gatekeeper/<game>/auto-shutdown-minutes (default: 20 minutes)
+        const backupsToKeep = props?.backupsToKeep || 5;
+        // Note: Auto-shutdown is controlled by SSM parameter /gatekeeper/<game>/auto-shutdown-minutes (default: 15 minutes)
 
         // Create VPC with a single public subnet
         this.vpc = new Vpc(this, "GameVpc", {
@@ -370,8 +370,12 @@ export class GameServerStack extends Stack {
         // derived <subdomain>.<BASE_DOMAIN>, used by the monitor's readiness ping
         // when set (it falls back to the public IP otherwise).
         userData.addCommands(
+            // IMDSv2-aware metadata fetch. AL2023 AMIs ship imds-support=v2.0, so
+            // instances launched from them default to HttpTokens=required — bare
+            // IMDSv1 curls 401. Fetch a token first (works on optional too).
+            'imds() { local t; t=$(curl -s -m 5 -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"); curl -s -m 5 -H "X-aws-ec2-metadata-token: $t" "http://169.254.169.254/latest/meta-data/$1"; }',
             `echo "GATEKEEPER_BUCKET=${this.backupBucket.bucketName}" > /etc/gatekeeper.conf`,
-            `echo "AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)" >> /etc/gatekeeper.conf`,
+            `echo "AWS_REGION=$(imds placement/region)" >> /etc/gatekeeper.conf`,
             `echo "GAME_DOMAIN=${gameDomain() ?? ''}" >> /etc/gatekeeper.conf`,
             "mkdir -p /etc/gatekeeper"
         );
@@ -391,7 +395,7 @@ Before=game-server.service game-monitor.service
 [Service]
 Type=oneshot
 # Wait for IAM credentials to be available
-ExecStartPre=/bin/bash -c 'echo "Waiting for IAM credentials..."; until curl -sf --connect-timeout 2 http://169.254.169.254/latest/meta-data/iam/security-credentials/ > /dev/null 2>&1; do echo "IAM credentials not ready, retrying..."; sleep 2; done; echo "IAM credentials available"'
+ExecStartPre=/bin/bash -c 'echo "Waiting for IAM credentials..."; until T=$(curl -sf -m 2 -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 21600") && curl -sf -m 2 -H "X-aws-ec2-metadata-token: $T" http://169.254.169.254/latest/meta-data/iam/security-credentials/ > /dev/null 2>&1; do echo "IAM credentials not ready, retrying..."; sleep 2; done; echo "IAM credentials available"'
 # Sync the profile-driven scripts from S3
 ExecStart=/bin/bash -c 'source /etc/gatekeeper.conf && echo "Syncing scripts from s3://$GATEKEEPER_BUCKET/scripts/game/..." && aws s3 sync "s3://$GATEKEEPER_BUCKET/scripts/game/" /usr/local/bin/ --exclude "*" --include "*.sh" --include "*.js" && chmod +x /usr/local/bin/*.sh && echo "Scripts synced"'
 # Fetch the active game profile (single source of truth for the runtime)
@@ -468,7 +472,7 @@ EOF`,
             properties: {
                 VolumeId: dataVolume.ref,
                 // Trigger update when deployment version changes
-                DeploymentVersion: '2026-06-09-v2',
+                DeploymentVersion: '2026-06-09-v4',
             },
         });
 
@@ -485,6 +489,13 @@ EOF`,
             machineImage: MachineImage.latestAmazonLinux2023(),
             securityGroup: securityGroup,
             userData: userData,
+            // User-data runs only at first boot, so a changed bootstrap must
+            // land on a NEW instance. Without this, a user-data-only deploy
+            // updates the property in place but never re-executes it — and the
+            // DeploymentVersion-driven volume-detach then orphans the data
+            // volume (detached from an instance that was never replaced).
+            // Pairs with the DeploymentVersion bump: replacement + volume hand-off.
+            userDataCausesReplacement: true,
             role: instanceRole,
             blockDevices: [
                 {
@@ -498,7 +509,7 @@ EOF`,
         });
 
         // Add deployment version tag to force replacement when needed
-        Tags.of(this.ec2Instance).add('DeploymentVersion', '2026-06-09-v2');
+        Tags.of(this.ec2Instance).add('DeploymentVersion', '2026-06-09-v4');
 
         // Ensure volume is detached from old instances before new instance is created
         this.ec2Instance.node.addDependency(volumeDetach);
@@ -548,7 +559,7 @@ EOF`,
 
         // Auto-shutdown configuration (minutes of idle time before server stops)
         // Set to "off" or "disabled" to disable auto-shutdown
-        const autoShutdownMinutes = process.env.AUTO_SHUTDOWN_MINUTES || '20';
+        const autoShutdownMinutes = process.env.AUTO_SHUTDOWN_MINUTES || '15';
         new StringParameter(this, "AutoShutdownParam", {
             parameterName: `/gatekeeper/${ACTIVE_GAME.id}/auto-shutdown-minutes`,
             stringValue: autoShutdownMinutes,

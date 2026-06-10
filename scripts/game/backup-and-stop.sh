@@ -8,8 +8,17 @@ set -uo pipefail
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"; }
 
-REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/placement/region)
-INSTANCE_ID=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/instance-id)
+# IMDSv2-aware metadata fetch (AL2023 enforces token auth; works on optional too).
+imds() {
+  local t
+  t=$(curl -s -m 5 -X PUT http://169.254.169.254/latest/api/token \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+  curl -s -m 5 -H "X-aws-ec2-metadata-token: $t" \
+        "http://169.254.169.254/latest/meta-data/$1"
+}
+
+REGION=$(imds placement/region)
+INSTANCE_ID=$(imds instance-id)
 [ -z "$REGION" ] || [ -z "$INSTANCE_ID" ] && { log "ERROR: could not read instance metadata"; exit 1; }
 
 log "Backup-and-stop sequence starting"
