@@ -54,6 +54,7 @@ export const valheim: GameProfile = {
     // pattern must include the digits: "... registered with join code 487341".
     logPattern: 'join code [0-9]+',
     codeLabel: 'Join Code', // Valheim's crossplay UI wording
+    addressWithPort: true,  // Valheim's add-server box takes one "host:port" string
     hint: 'Save the server in Steam favorites (View → Game Servers → Favorites) using its address — ' +
       'Steam remembers the password after the first join. Or use the crossplay join code posted ' +
       'here when the server comes online.',
@@ -81,6 +82,10 @@ export const valheim: GameProfile = {
     // hologram when the public assets bucket lands.
     thumbnailUrl: 'https://static.wikia.nocookie.net/valheim/images/5/52/Munin.png',
     footer: 'Memory of the All-Father',
+    lines: {
+      starting: 'The ravens take wing — your world is waking.',
+      offline: 'The world sleeps. Every deed is remembered.',
+    },
     // Munin is memory to Hugin's thought: he remembers, records, and recalls.
     hailQuotes: [
       'Hrafn! I am Munin — Hugin thinks, I remember. Your worlds are safe in my keeping.',

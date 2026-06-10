@@ -108,7 +108,8 @@ function handleEC2StoppedEvent(detail: any): any {
         // Webhook identity above already names the character; no byline repeat.
         byline: false,
         title: '🛑 Server Offline',
-        description: `The facility has powered down completely. Use \`${slash} start\` when you want to play again.`,
+        description: `${persona.lines?.offline ?? 'The server has shut down completely.'} ` +
+          `Use \`${slash} start\` when you want to play again.`,
         color: 0x95a5a6, // gray
         extra: { timestamp: time.toISOString() },
       }),

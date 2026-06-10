@@ -62,7 +62,8 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
       ? { type: 'address', port: profile.join.port, hint: profile.join.hint ?? '',
           codeLabel: profile.join.codeLabel ?? 'Join Code' }
       : { type: profile.join.type, hint: profile.join.hint ?? '',
-          codeLabel: profile.join.codeLabel ?? 'Join Code' },
+          codeLabel: profile.join.codeLabel ?? 'Join Code',
+          addressWithPort: profile.join.addressWithPort ?? false },
     // Mod install kinds: metadata `kind` -> { targetPath, env? }. The start
     // script syncs each of the active world's mods (from the S3 library) into
     // its kind's targetPath and applies the kind env. Empty = game unmodded.

@@ -60,11 +60,15 @@ export async function buildJoinFields(host: string): Promise<EmbedField[]> {
     console.log("No join code in SSM");
   }
 
+  // Games whose connect box takes one "host:port" string (Valheim) get it
+  // pre-joined as a single copyable; others keep separate Address/Port fields.
+  const withPort = ACTIVE_GAME.join.type === "join-code" && ACTIVE_GAME.join.addressWithPort;
+
   return [
     // Full-width: domains don't fit Discord's narrow 3-per-row inline fields
     // without ugly wrapping inside the code block.
-    { name: "🌐 Address", value: copyable(host), inline: false },
-    { name: "🔌 Port", value: copyable(joinPort), inline: true },
+    { name: "🌐 Address", value: copyable(withPort ? `${host}:${joinPort}` : host), inline: false },
+    ...(withPort ? [] : [{ name: "🔌 Port", value: copyable(joinPort), inline: true }]),
     // Spoiler-wrapped so screenshots/streams don't leak it — click to reveal.
     ...(password ? [{ name: "🔑 Password", value: `||${copyable(password)}||`, inline: true }] : []),
     // Label is per-game UI wording: AF says "Lobby Code", Valheim "Join Code".

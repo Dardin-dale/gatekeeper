@@ -189,8 +189,8 @@ export async function handleStartCommand(worldName?: string, guildId?: string): 
         data: {
           embeds: [{
             title: '🚀 Server Starting',
-            description: 'The facility is powering up. First boot can take several ' +
-                        'minutes while the server provisions.\n\n' +
+            description: `${persona.lines?.starting ?? 'The server is powering up.'} ` +
+                        'First boot can take several minutes while the server provisions.\n\n' +
                         'You\'ll get a notification with the join address when it\'s live.',
             color: 0x39a0a0,
             fields: displayWorldName ? [{

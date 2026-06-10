@@ -51,6 +51,7 @@ PLAYERS_LOG_PATTERN=$(jq -r '.playersLogPattern // empty' "$PROFILE")
 JOIN_PORT=$(jq -r '.join.port // .ports[0].from' "$PROFILE")
 JOIN_HINT=$(jq -r '.join.hint // empty' "$PROFILE")
 CODE_LABEL=$(jq -r '.join.codeLabel // "Join Code"' "$PROFILE")
+ADDRESS_WITH_PORT=$(jq -r '.join.addressWithPort // false' "$PROFILE")
 NAMESPACE="GameServer"
 PLAYER_COUNT_PARAM="/gatekeeper/${GAME_ID}/player-count"
 AUTO_SHUTDOWN_PARAM="/gatekeeper/${GAME_ID}/auto-shutdown-minutes"
@@ -153,12 +154,13 @@ while true; do
       # spoiler-wrapped (||…||). Built with jq string interpolation rather than
       # `+` concat — jq 1.7 mis-parses concatenating a backtick string.
       JOIN_FIELDS=$(jq -n --arg host "$JOIN_HOST" --arg port "$JOIN_PORT" \
-        --arg pw "$SERVER_PASSWORD" --arg code "$JOIN_CODE" --arg codeLabel "$CODE_LABEL" '
-        [ {name: "🌐 Address", value: "```\n\($host)\n```", inline: false},
-          {name: "🔌 Port",    value: "```\n\($port)\n```", inline: true} ]
+        --arg pw "$SERVER_PASSWORD" --arg code "$JOIN_CODE" --arg codeLabel "$CODE_LABEL" \
+        --argjson awp "$ADDRESS_WITH_PORT" '
+        [ {name: "🌐 Address", value: "```\n\(if $awp then "\($host):\($port)" else $host end)\n```", inline: false} ]
+        + (if $awp then [] else [{name: "🔌 Port", value: "```\n\($port)\n```", inline: true}] end)
         + (if $pw   != "" then [{name: "🔑 Password",   value: "||```\n\($pw)\n```||", inline: true}] else [] end)
         + (if $code != "" then [{name: "🎟️ \($codeLabel)", value: "```\n\($code)\n```", inline: true}] else [] end)')
-      DESC="${JOIN_HINT:-The facility is live — connect with the details below.}"
+      DESC="${JOIN_HINT:-The server is live — connect with the details below.}"
       post_discord "🟢 Server Online" "$DESC" 3776160 "$JOIN_FIELDS"
     fi
   else

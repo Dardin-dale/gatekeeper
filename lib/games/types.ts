@@ -194,6 +194,13 @@ export type JoinStrategy =
       hint?: string;
       /** What this game's UI calls the code. Default: 'Join Code'. */
       codeLabel?: string;
+      /**
+       * Render the address as one copyable "host:port" and drop the separate
+       * Port field — for games whose connect box takes a single string
+       * (Valheim's add-server / Steam favorites). Default: separate fields,
+       * which suits dialogs with distinct IP/Port boxes (AF's Direct Connect).
+       */
+      addressWithPort?: boolean;
     };
 
 export interface Persona {
@@ -209,4 +216,15 @@ export interface Persona {
   footer: string;
   /** First-person lines for the /gate hail ping test. */
   hailQuotes: string[];
+  /**
+   * Optional in-character one-liners for lifecycle messages (flavor only —
+   * operational details like boot time or the join hint are appended by the
+   * handlers). Neutral defaults when omitted.
+   */
+  lines?: {
+    /** /gate start acknowledgement. Default: 'The server is powering up.' */
+    starting?: string;
+    /** Final EC2-stopped notification. Default: 'The server has shut down completely.' */
+    offline?: string;
+  };
 }

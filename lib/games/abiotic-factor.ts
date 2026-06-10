@@ -98,6 +98,10 @@ export const abioticFactor: GameProfile = {
     // depend on the wiki keeping this URL stable (see DEVELOPMENT-PLAN.md).
     thumbnailUrl: 'https://abioticfactor.wiki.gg/images/Hologram.PNG',
     footer: 'GATE Cascade Research Facility',
+    lines: {
+      starting: 'The facility is powering up.',
+      offline: 'The facility has powered down completely.',
+    },
     // First-person, in the voice of Director Manse's facility holograms:
     // authoritative, clinical, faintly condescending.
     hailQuotes: [
