@@ -64,6 +64,7 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     persona: {
       characterName: profile.persona.characterName,
       thumbnailUrl: profile.persona.thumbnailUrl ?? '',
+      footer: profile.persona.footer,
     },
   };
 }

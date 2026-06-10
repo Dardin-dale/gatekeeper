@@ -69,21 +69,24 @@ get_webhook_url() {
     --region "$REGION" --query "Parameter.Value" --output text 2>/dev/null
 }
 
-# Persona for webhook posts — post in full as the character (e.g. Dr. Derek Manse)
-# with his avatar, matching the lambda embeds.
+# Persona for webhook posts — the message-level username/avatar IS the character
+# (e.g. Dr. Derek Manse), so the embed itself stays clean: no author byline
+# repeating the same name/face, footer from the profile (game-agnostic).
 PERSONA_NAME=$(jq -r '.persona.characterName // "GATEKeeper"' "$PROFILE")
 PERSONA_AVATAR=$(jq -r '.persona.thumbnailUrl // empty' "$PROFILE")
+PERSONA_FOOTER=$(jq -r '.persona.footer // empty' "$PROFILE")
 
 post_discord() { # $1 = title, $2 = description, $3 = color (decimal), $4 = optional JSON embed-fields array
   local url; url=$(get_webhook_url) || { log "no webhook configured; skipping Discord post"; return 0; }
   [ -z "$url" ] || [ "$url" = "None" ] && { log "no webhook configured; skipping Discord post"; return 0; }
   # Build the payload with jq so the name/avatar/text are safely JSON-escaped.
   local payload
-  payload=$(jq -n --arg name "$PERSONA_NAME" --arg avatar "$PERSONA_AVATAR" \
+  payload=$(jq -n --arg name "$PERSONA_NAME" --arg avatar "$PERSONA_AVATAR" --arg footer "$PERSONA_FOOTER" \
     --arg title "$1" --arg desc "$2" --argjson color "$3" --argjson fields "${4:-[]}" \
-    '{username: $name, embeds: [{author: {name: $name}, title: $title, description: $desc, color: $color, footer: {text: "GATE Cascade Research Facility"}}]}
+    '{username: $name, embeds: [{title: $title, description: $desc, color: $color}]}
+     | if $footer != "" then .embeds[0].footer = {text: $footer} else . end
      | if ($fields | length) > 0 then .embeds[0].fields = $fields else . end
-     | if $avatar != "" then .avatar_url = $avatar | .embeds[0].author.icon_url = $avatar else . end')
+     | if $avatar != "" then .avatar_url = $avatar else . end')
   curl -s -m 10 -H "Content-Type: application/json" -X POST "$url" -d "$payload" \
     > /dev/null 2>&1 || log "WARNING: Discord post failed"
 }

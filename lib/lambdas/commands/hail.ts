@@ -10,6 +10,7 @@ export async function handleHailCommand(): Promise<APIGatewayProxyResult> {
   const embed = personaEmbed({
     title: `📽️ Hologram: ${persona.characterName}`,
     description: pickHailQuote(),
+    withThumbnail: true, // the showpiece — full character portrait
   });
 
   return {

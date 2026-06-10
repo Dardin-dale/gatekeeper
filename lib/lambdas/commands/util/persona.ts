@@ -20,9 +20,13 @@ export function pickHailQuote(): string {
   return quotes[Math.floor(Math.random() * quotes.length)];
 }
 
-/** Standard embed footer, e.g. "GATEKeeper • GATE Cascade Research Facility". */
+/**
+ * Standard embed footer. Just the suffix (default: the persona's flavor
+ * footer) — the bot's name/avatar already head every message via its Discord
+ * app theming, so repeating botName here was pure duplication.
+ */
 export function personaFooter(suffix: string = persona.footer): string {
-  return `${persona.botName} • ${suffix}`;
+  return suffix;
 }
 
 /**
@@ -36,22 +40,34 @@ export function personaAuthor(): Record<string, unknown> {
   return author;
 }
 
-/** Build a persona-styled embed, bylined to the character + hologram thumbnail. */
+/**
+ * Build a persona-styled embed. Identity is layered, not repeated:
+ *  - The Discord app (bot name/avatar from the portal) heads every interaction
+ *    response, so embeds don't restate it.
+ *  - `byline` (default on) adds the CHARACTER's voice (e.g. Dr. Manse) — kept
+ *    for bot responses because the character is distinct from the bot identity;
+ *    turn it OFF for webhook posts that already set username/avatar_url to the
+ *    character at the message level.
+ *  - `withThumbnail` (default off) adds the big character image — reserved for
+ *    showpieces like /gate hail.
+ */
 export function personaEmbed(fields: {
   title: string;
   description?: string;
   color?: number;
   footerSuffix?: string;
+  byline?: boolean;
+  withThumbnail?: boolean;
   extra?: Record<string, unknown>;
 }): Record<string, unknown> {
   const embed: Record<string, unknown> = {
-    author: personaAuthor(),
     title: fields.title,
     color: fields.color ?? persona.color,
     footer: { text: personaFooter(fields.footerSuffix) },
     ...fields.extra,
   };
+  if (fields.byline !== false) embed.author = personaAuthor();
   if (fields.description) embed.description = fields.description;
-  if (persona.thumbnailUrl) embed.thumbnail = { url: persona.thumbnailUrl };
+  if (fields.withThumbnail && persona.thumbnailUrl) embed.thumbnail = { url: persona.thumbnailUrl };
   return embed;
 }
