@@ -48,6 +48,19 @@ export const valheim: GameProfile = {
       'here when the server comes online.',
   },
 
+  // The huginbot model, expressed as a ModsSpec: BepInEx plugin .dlls synced
+  // into /config/bepinex/plugins (the image installs BepInEx itself when
+  // BEPINEX=true), imported headlessly from Thunderstore by `cli mods import`.
+  mods: {
+    kinds: {
+      'bepinex-plugin': {
+        targetPath: '/mnt/game-data/config/bepinex/plugins',
+        env: { BEPINEX: 'true' },
+      },
+    },
+    source: { type: 'thunderstore', community: 'valheim' },
+  },
+
   persona: {
     botName: 'HuginBot',
     characterName: 'Hugin',

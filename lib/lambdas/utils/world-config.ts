@@ -6,8 +6,16 @@ export interface WorldConfig {
   serverPassword: string;      // Server password
   adminIds?: string;           // Admin Steam IDs (space-separated)
   default?: boolean;           // The world /gate start loads when none is specified
+  mods?: string[];             // S3 mod-library entries to install for this world
   overrides?: Record<string, unknown>; // Optional container env overrides
 }
+
+/**
+ * Mod names key S3 paths (mods/<Name>/...) and host file paths, so they're
+ * restricted to a path- and shell-safe charset. Enforced here, by the CLI on
+ * `mods add`, and re-checked by the host installer.
+ */
+export const MOD_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /**
  * Validate a world configuration. Returns an array of error messages
@@ -44,6 +52,18 @@ export function validateWorldConfig(worldConfig: WorldConfig): string[] {
     errors.push('Discord server ID must be a numeric value');
   }
 
+  if (worldConfig.mods !== undefined) {
+    if (!Array.isArray(worldConfig.mods)) {
+      errors.push('mods must be an array of mod library names');
+    } else {
+      for (const mod of worldConfig.mods) {
+        if (typeof mod !== 'string' || !MOD_NAME_PATTERN.test(mod)) {
+          errors.push(`Invalid mod name '${mod}' (letters, digits, . _ - only)`);
+        }
+      }
+    }
+  }
+
   return errors;
 }
 
@@ -61,6 +81,7 @@ interface RawWorld {
   discordId?: string;
   adminIds?: string;
   default?: boolean;
+  mods?: string[];
   overrides?: Record<string, unknown>;
 }
 
@@ -90,6 +111,7 @@ export function parseWorldConfigsFromJson(json: string): WorldConfig[] {
       discordServerId: entry.discordServerId ?? entry.discordId ?? '',
       adminIds: entry.adminIds || undefined,
       default: entry.default || undefined,
+      mods: entry.mods && entry.mods.length > 0 ? entry.mods : undefined,
       overrides: entry.overrides,
     };
     const errors = validateWorldConfig(config);

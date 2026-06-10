@@ -76,6 +76,71 @@ else
   echo "NOTICE: no active-world parameter; booting image defaults"
 fi
 
+# --- Sync the world's mods from the S3 library ------------------------------
+# Game-agnostic: each library mod (s3://<bucket>/mods/<Name>/) declares its
+# install `kind` in metadata.json; the profile maps kind -> host targetPath
+# (+ optional container env, e.g. Valheim's BEPINEX=true). A manifest records
+# every file installed so the next start removes exactly those files — never
+# base-game files sharing the directory (AF paks land next to base pakchunks).
+MOD_ENV_ARGS=()
+MANIFEST=/mnt/game-data/.gatekeeper/mods.manifest
+mkdir -p "$(dirname "$MANIFEST")"
+
+if [ -f "$MANIFEST" ]; then
+  while IFS= read -r f; do
+    [ -n "$f" ] && rm -f "$f"
+  done < "$MANIFEST"
+  : > "$MANIFEST"
+fi
+
+MODS_JSON=$(echo "${WORLD_JSON:-}" | jq -c '.mods // []' 2>/dev/null || echo '[]')
+HAS_KINDS=$(jq -r '.modKinds // {} | length' "$PROFILE")
+if [ "$MODS_JSON" != "[]" ]; then
+  GATEKEEPER_BUCKET=""
+  [ -f /etc/gatekeeper.conf ] && source /etc/gatekeeper.conf
+  if [ -z "$GATEKEEPER_BUCKET" ]; then
+    echo "WARNING: world requests mods but GATEKEEPER_BUCKET is unset; skipping mods"
+  elif [ "$HAS_KINDS" = "0" ]; then
+    echo "WARNING: world requests mods but this game declares no mod kinds; skipping mods"
+  else
+    USED_KINDS=""
+    for MOD in $(echo "$MODS_JSON" | jq -r '.[]'); do
+      # Library names are CLI-enforced; refuse anything path- or shell-unsafe.
+      if ! echo "$MOD" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$'; then
+        echo "  WARNING: invalid mod name '$MOD'; skipping"; continue
+      fi
+      if ! META=$(aws s3 cp "s3://${GATEKEEPER_BUCKET}/mods/${MOD}/metadata.json" - 2>/dev/null); then
+        echo "  WARNING: mod '$MOD' not found in the library; skipping"; continue
+      fi
+      KIND=$(echo "$META" | jq -r '.kind // empty')
+      TARGET=$(jq -r --arg k "$KIND" '.modKinds[$k].targetPath // empty' "$PROFILE")
+      if [ -z "$TARGET" ]; then
+        echo "  WARNING: mod '$MOD' kind '${KIND:-?}' unsupported by this game; skipping"; continue
+      fi
+      COUNT=0
+      while IFS= read -r KEY; do
+        [ -z "$KEY" ] || [ "$KEY" = "None" ] && continue
+        REL="${KEY#mods/${MOD}/files/}"
+        DEST="${TARGET}/${REL}"
+        mkdir -p "$(dirname "$DEST")"
+        if aws s3 cp "s3://${GATEKEEPER_BUCKET}/${KEY}" "$DEST" --only-show-errors --region "$REGION"; then
+          echo "$DEST" >> "$MANIFEST"
+          COUNT=$((COUNT + 1))
+        fi
+      done < <(aws s3api list-objects-v2 --bucket "$GATEKEEPER_BUCKET" --prefix "mods/${MOD}/files/" \
+                 --query 'Contents[].Key' --output text --region "$REGION" 2>/dev/null | tr '\t' '\n')
+      echo "  Installed mod ${MOD} (${KIND}): ${COUNT} file(s) -> ${TARGET}"
+      case " $USED_KINDS " in *" $KIND "*) ;; *) USED_KINDS="$USED_KINDS $KIND" ;; esac
+    done
+    # Kind env (e.g. BEPINEX=true) for every kind with at least one mod installed.
+    for KIND in $USED_KINDS; do
+      while IFS=$'\t' read -r k v; do
+        [ -n "$k" ] && MOD_ENV_ARGS+=( -e "${k}=${v}" )
+      done < <(jq -r --arg kind "$KIND" '.modKinds[$kind].env // {} | to_entries[] | [.key, .value] | @tsv' "$PROFILE")
+    done
+  fi
+fi
+
 # --- Build docker args from the profile ------------------------------------
 ENV_ARGS=(); PORT_ARGS=(); VOL_ARGS=()
 
@@ -120,7 +185,7 @@ done < <(jq -r '.volumes[] | [.hostPath, .containerPath] | @tsv' "$PROFILE")
 # "Missing configuration" exit (validated locally: a re-run pulls cleanly).
 echo "Launching $NAME..."
 if ! CONTAINER_ID=$(docker run -d --name "$NAME" --restart unless-stopped \
-  "${PORT_ARGS[@]}" "${VOL_ARGS[@]}" "${ENV_ARGS[@]}" "$IMAGE"); then
+  "${PORT_ARGS[@]}" "${VOL_ARGS[@]}" "${ENV_ARGS[@]}" "${MOD_ENV_ARGS[@]}" "$IMAGE"); then
   echo "ERROR: Failed to start container"
   exit 1
 fi

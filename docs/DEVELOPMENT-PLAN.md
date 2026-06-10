@@ -114,6 +114,32 @@ no always-on EventBridge.
 - [ ] **Real deploy** (`npm run deploy`) → set Discord Interactions Endpoint → `/gate setup` → `/gate start`
       → connect from the AF client → confirm idle auto-shutdown.
 
+### Phase 7 — Profile-driven mods (implemented; first deploy pending)
+Mods return as generic infrastructure (Phase 3 deliberately dropped the Valheim-specific
+BepInEx scripts; this is their multi-game replacement). See `docs/mods.md` for the model.
+- [x] **`GameProfile.mods` contract** — per-game install `kinds` (metadata kind → host
+      `targetPath` + optional container env), `source` (thunderstore | manual), `clientsMustMatch`.
+      AF: `pak` into `Content/Paks` (UE4SS deliberately unsupported — loader broken under Wine
+      post-1.3.0). Valheim: `bepinex-plugin` + `BEPINEX=true` from Thunderstore.
+- [x] **Host installer** — `start-server.sh` syncs the active world's mods from the S3 library on
+      start, **manifest-tracked** (only ever removes files it installed — AF paks share the dir
+      with base-game pakchunks). Bad/missing mods warn + skip, never block the start.
+- [x] **Per-world `mods` array** in `config/<game>.worlds.json` (flows to the host via the
+      active-world SSM param, which already carried the whole WorldConfig).
+- [x] **CLI library** — `cli mods list|add|import|info|remove` against
+      `s3://<bucket>/mods/<Name>/`; `import` is Thunderstore-only (AF/Nexus has no headless API,
+      so AF mods are download-then-`add`).
+- [x] **Discord** — `/gate mods [world]` (mod list + portal links + client-install warning) and
+      `/gate worlds` (startable worlds, default marker, mod counts).
+- [ ] **Tier-2 validation** — local compose run with a real pak mod (verify load + clean removal),
+      then a deployed AF world with one mod.
+
+### Phase 8 — Next games (planned)
+Priorities + contract findings in `docs/GAME-CANDIDATES.md`: **Valheim full port** (retire
+huginbot — operational only, the profile/mods are ready), then **Core Keeper** (fits the contract;
+A2S at port+1 in direct-connect mode, official mod.io SDK mods as one new kind). Factorio /
+Satisfactory deferred — both need the `QueryStrategy` carve-out (no A2S; RCON / HTTPS API).
+
 ---
 
 ## Future directions (deferred)

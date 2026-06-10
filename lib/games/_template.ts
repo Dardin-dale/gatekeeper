@@ -44,6 +44,15 @@ export const templateGame: GameProfile = {
   // address (IP:port) for most games, or { type: 'join-code', logPattern } for crossplay codes.
   join: { type: 'address', port: 0 }, // TODO real join port
 
+  // OPTIONAL — delete if the game has no mod story. Each kind maps a library
+  // mod's metadata `kind` to the host dir its files install into (must live on
+  // the persistent volume mounts above). See docs/mods.md.
+  // mods: {
+  //   kinds: { 'TODO-kind': { targetPath: '/mnt/game-data/data/TODO', env: {} } },
+  //   source: { type: 'manual', portalUrl: 'TODO mod portal URL' },
+  //   clientsMustMatch: true, // players must mirror the server's mods to join
+  // },
+
   persona: {
     botName: 'GATEKeeper',
     characterName: 'TODO Character',

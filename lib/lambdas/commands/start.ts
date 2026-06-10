@@ -110,7 +110,7 @@ export async function handleStartCommand(worldName?: string, guildId?: string): 
           body: JSON.stringify({
             type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
             data: {
-              content: `❌ World "${worldName}" not found. Use /worlds list to see available worlds.`
+              content: `❌ World "${worldName}" not found. Use /gate worlds to see available worlds.`
             }
           })
         };

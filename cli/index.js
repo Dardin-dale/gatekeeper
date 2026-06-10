@@ -7,6 +7,7 @@
 
 const backup = require('./commands/backup');
 const world = require('./commands/world');
+const mods = require('./commands/mods');
 const { GAME_ID, STACK_NAME } = require('./lib/context');
 
 function usage() {
@@ -21,6 +22,12 @@ Usage:
   npm run cli world push <dir|tar.gz> [name] Upload a local save as a seed archive
   npm run cli world list                     List uploaded seed archives
   npm run cli world restore [name|latest]    Restore a seed archive onto the running server
+
+  npm run cli mods list                      List the S3 mod library
+  npm run cli mods add <file|dir|zip> [name] Add a downloaded mod (--kind k --url u --version v)
+  npm run cli mods import <Ns/Mod[@ver]>     Import from Thunderstore (games with a community)
+  npm run cli mods info <name>               Show a mod's metadata
+  npm run cli mods remove <name>             Remove a mod from the library
 
 Notes:
   - Server start/stop/status are Discord commands: /gate start | stop | status
@@ -42,6 +49,14 @@ async function main() {
     if (sub === 'push') return world.push(rest[0], rest[1]);
     if (sub === 'list') return world.list();
     if (sub === 'restore') return world.restore(rest[0], 'bootstrap');
+  }
+
+  if (group === 'mods') {
+    if (sub === 'list') return mods.list();
+    if (sub === 'add') return mods.add(...rest);
+    if (sub === 'import') return mods.importMod(...rest);
+    if (sub === 'info') return mods.info(rest[0]);
+    if (sub === 'remove') return mods.remove(rest[0]);
   }
 
   usage();

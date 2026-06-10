@@ -26,6 +26,12 @@ npm run cli backup restore [name|latest]     # restore a backup onto the running
 npm run cli world push <dir|tar.gz> [name]   # upload a local save as a seed archive
 npm run cli world list                       # list uploaded seed archives
 npm run cli world restore [name|latest]      # restore a seed archive onto the running server
+
+npm run cli mods list                        # list the S3 mod library
+npm run cli mods add <file|dir|zip> [name]   # add a downloaded mod (--kind k --url u --version v)
+npm run cli mods import <Ns/Mod[@ver]>       # import from Thunderstore (games with a community)
+npm run cli mods info <name>                 # a mod's metadata + files
+npm run cli mods remove <name>               # remove a mod from the library
 ```
 
 - **`backup list`** — backups live at `s3://<backup-bucket>/backups/<game-id>/<timestamp>.tar.gz`
@@ -37,6 +43,10 @@ npm run cli world restore [name|latest]      # restore a seed archive onto the r
 - **`backup restore` / `world restore`** — runs `restore-world.sh` on the instance via SSM (server
   must be running): stops the game, **backs up the current data first**, extracts the archive into
   the data volume, and restarts the game (the readiness ping posts to Discord when it's back).
+- **`mods ...`** — manages the library at `s3://<backup-bucket>/mods/<Name>/`; worlds opt in via
+  their `mods` array in `config/<game>.worlds.json`, installed by the host on world start. The full
+  model + per-game walkthroughs (Abiotic Factor/Nexus, Valheim/Thunderstore): `docs/mods.md`.
+  `mods add` zip handling shells out to `unzip` (install it locally if missing).
 
 ## World bootstrap (seeding a friend's save)
 

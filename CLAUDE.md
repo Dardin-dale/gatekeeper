@@ -66,15 +66,19 @@ lib/games/
 
 ## Discord commands (`/gate <sub>`)
 
-`hail` (persona ping) · `start [world]` · `stop [force]` · `status` · `join` · `setup` · `help`.
+`hail` (persona ping) · `start [world]` · `stop [force]` · `status` · `join` · `worlds` ·
+`mods [world]` · `setup` · `help`.
 Dispatch lives in `lib/lambdas/commands.ts`; each subcommand is a handler in `lib/lambdas/commands/`.
 
 ## Config & secrets
 
 - **How to run a game** (committed, no secrets): the `GameProfile`.
 - **What to run** (gitignored secrets): `config/<game>.worlds.json` — `[{ name, worldName,
-  serverPassword, discordServerId, default?, adminIds? }]`. A committed `*.worlds.example.json` is
-  the template. The stack reads it into the `WORLDS_JSON` Lambda env at synth.
+  serverPassword, discordServerId, default?, adminIds?, mods? }]`. A committed
+  `*.worlds.example.json` is the template. The stack reads it into the `WORLDS_JSON` Lambda env at synth.
+- **Mods** (see `docs/mods.md`): per-game install kinds on `GameProfile.mods`; the library lives at
+  `s3://<backup-bucket>/mods/<Name>/` (`cli mods ...`); a world's `mods` array names library entries,
+  installed by the host on world start (manifest-tracked).
 - **Runtime source of truth**: SSM under `/gatekeeper/<game-id>/*` (active world, player count,
   webhooks as SecureString, auto-shutdown minutes, per-guild default world).
 - `/gate start` resolves the per-guild default world → writes `active-world` to SSM → the host start

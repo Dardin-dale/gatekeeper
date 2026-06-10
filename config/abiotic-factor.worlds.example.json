@@ -5,6 +5,7 @@
     "password": "change-me",
     "discordServerId": "123456789012345678",
     "adminIds": "",
-    "default": true
+    "default": true,
+    "mods": []
   }
 ]

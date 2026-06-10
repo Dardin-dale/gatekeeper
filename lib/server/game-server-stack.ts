@@ -748,7 +748,8 @@ EOF`,
             ]
         });
 
-        // Add S3 backup policy for commands function
+        // Add S3 policy for commands function: world seeds + mod-library
+        // metadata (read by /gate mods to render names/links).
         const s3BackupPolicy = new PolicyStatement({
             actions: [
                 "s3:ListBucket",
@@ -756,7 +757,8 @@ EOF`,
             ],
             resources: [
                 this.backupBucket.bucketArn,
-                `${this.backupBucket.bucketArn}/worlds/*`
+                `${this.backupBucket.bucketArn}/worlds/*`,
+                `${this.backupBucket.bucketArn}/mods/*`
             ]
         });
 

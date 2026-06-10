@@ -57,7 +57,60 @@ export interface GameProfile {
    */
   join: JoinStrategy;
 
+  /**
+   * How this game takes mods, if it does. Omit for games with no (supported)
+   * mod story. Mods themselves are per-world WHAT-config (the `mods` array in
+   * config/<game>.worlds.json names entries in the S3 mod library); this spec
+   * is the per-game HOW: which install kinds exist and where their files land.
+   */
+  mods?: ModsSpec;
+
   persona: Persona;
+}
+
+/**
+ * Per-game mod support. The S3 mod library (s3://<backup-bucket>/mods/<Name>/)
+ * is the normalization layer: every library entry declares a `kind` in its
+ * metadata.json, and by install time a mod is just "files + kind". The host
+ * start script copies each of the active world's mods into the kind's
+ * targetPath (cleaning up the previous set via a manifest), so the bash stays
+ * game-agnostic — this map is the only place install mechanics differ.
+ */
+export interface ModsSpec {
+  /**
+   * Install kinds this game accepts, keyed by the `kind` in a library mod's
+   * metadata.json — e.g. 'pak' (AF), 'bepinex-plugin' (Valheim).
+   */
+  kinds: Record<string, ModKind>;
+  /**
+   * Where mods come from, for the CLI. 'thunderstore' enables headless
+   * `cli mods import` (anonymous package download API); 'manual' means
+   * download-it-yourself + `cli mods add` (e.g. Nexus Mods, whose API gates
+   * automated downloads). Default: manual with no portal link.
+   */
+  source?:
+    | { type: 'thunderstore'; community: string }
+    | { type: 'manual'; portalUrl?: string };
+  /**
+   * True when players must install the SAME mods on their clients to join
+   * (no server-side sync/handshake). Drives the warning + per-mod links in
+   * /gate mods so the world's mod list doubles as the client install list.
+   */
+  clientsMustMatch?: boolean;
+}
+
+export interface ModKind {
+  /**
+   * HOST directory the kind's files are copied into — absolute, on/under the
+   * persistent data volume's bind mounts so installs survive stop/start and
+   * instance replacement (e.g. AF paks live inside the gamefiles mount).
+   */
+  targetPath: string;
+  /**
+   * Container env to add when at least one mod of this kind is installed
+   * (e.g. Valheim's { BEPINEX: 'true' } to enable the loader).
+   */
+  env?: Record<string, string>;
 }
 
 export interface ContainerSpec {

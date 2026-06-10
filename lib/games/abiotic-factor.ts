@@ -66,6 +66,25 @@ export const abioticFactor: GameProfile = {
     codeLogPattern: 'Session short code: [A-Z0-9]+',
   },
 
+  // AF mods live on Nexus (no Thunderstore community / Workshop / headless
+  // download API), so the pipeline is: download the zip yourself, `cli mods add`
+  // it into the S3 library, list it in a world's `mods`. Only pak patch mods
+  // (*_P.pak[/.utoc/.ucas] dropped into Content/Paks) are supported — UE4SS
+  // script mods need a pinned loader that's currently broken under Wine, so
+  // that kind is deliberately absent until the ecosystem stabilizes.
+  mods: {
+    kinds: {
+      // Inside the gamefiles bind mount (-> /server in the container), next to
+      // the base game's pakchunks; the manifest-based installer only ever
+      // removes files it copied, so base content is safe.
+      pak: { targetPath: '/mnt/game-data/gamefiles/AbioticFactor/Content/Paks' },
+    },
+    source: { type: 'manual', portalUrl: 'https://www.nexusmods.com/games/abioticfactor' },
+    // No server->client sync or handshake: players must install the same pak
+    // mods by hand or they desync — /gate mods is the install list.
+    clientsMustMatch: true,
+  },
+
   persona: {
     botName: 'GATEKeeper',
     characterName: 'Dr. Derek Manse',

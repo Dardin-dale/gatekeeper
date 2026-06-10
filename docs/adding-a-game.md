@@ -21,6 +21,8 @@ Key fields (see `lib/games/types.ts` for the full contract):
   (player count, liveness, idle shutdown) is done via Steam A2S, so the game must expose A2S.
 - `instanceType`, `dataVolumeSizeGb` — sizing (override instance with `INSTANCE_TYPE`).
 - `join` — `{ type: 'address', port }` for IP/A2S games, or `{ type: 'join-code', logPattern }`.
+- `mods` — optional: the install kinds the game accepts (kind → host `targetPath` under a volume
+  mount, + optional container env) and where mods come from. See `docs/mods.md`.
 - `persona` — the bot's voice/branding for this game (drives every embed). No secrets here.
 
 ## 2. Register it
@@ -45,8 +47,9 @@ same profile will too. (See how `abiotic-factor.ts` was de-risked this way.)
 cp config/<existing>.worlds.example.json config/my-game.worlds.json   # then edit
 ```
 
-`[{ name, worldName, serverPassword, discordServerId, default?, adminIds? }]`. Commit a
+`[{ name, worldName, serverPassword, discordServerId, default?, adminIds?, mods? }]`. Commit a
 `config/my-game.worlds.example.json` template; **never** commit the real `*.worlds.json`.
+(`mods` names entries in the S3 mod library — see `docs/mods.md`.)
 
 ## 5. Deploy
 
@@ -60,5 +63,6 @@ games. Then set the Discord Interactions Endpoint, `/gate setup`, and `/gate sta
 ## A2S-only constraint
 
 Monitoring assumes the server answers Steam A2S on `queryPort`. Almost all Steam dedicated servers
-do. A game without A2S would need a different liveness/player-count source (e.g. log scraping, as the
-Valheim stub's `join-code`/`logPattern` hints) — not currently implemented in the monitor.
+do. A game without A2S would need a different liveness/player-count source (e.g. Factorio's RCON or
+Satisfactory's HTTPS API) — not currently implemented in the monitor. The planned shape is a
+`QueryStrategy` carve-out mirroring `JoinStrategy`; see `docs/GAME-CANDIDATES.md`.

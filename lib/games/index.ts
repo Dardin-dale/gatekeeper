@@ -55,6 +55,10 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     join: profile.join.type === 'address'
       ? { type: 'address', port: profile.join.port, hint: profile.join.hint ?? '' }
       : { type: profile.join.type },
+    // Mod install kinds: metadata `kind` -> { targetPath, env? }. The start
+    // script syncs each of the active world's mods (from the S3 library) into
+    // its kind's targetPath and applies the kind env. Empty = game unmodded.
+    modKinds: profile.mods?.kinds ?? {},
     // Just enough persona for the host's webhook posts to come from the character
     // in full (e.g. Dr. Derek Manse) with his avatar — matches the lambda embeds.
     persona: {

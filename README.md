@@ -6,10 +6,10 @@ Start, stop, and join your server straight from Discord — and only pay for the
 > *"This is a recorded message from Director Manse. The Cascade facility is online."*
 > GATEKeeper speaks as **Dr. Derek Manse**, Director of Research of the GATE Cascade facility.
 
-> 🚧 **Status: deploy-ready, pre-first-deploy.** Adapted from
+> **Status: deployed and live** (Abiotic Factor on `GateStack-AbioticFactor`). Adapted from
 > [huginbot](https://github.com/Dardin-dale/huginbot) (a Valheim server manager) onto a generic,
-> multi-game backbone. The Abiotic Factor profile is fully wired and validated against a real local
-> server; the cloud stack synthesizes cleanly. See `docs/DEVELOPMENT-PLAN.md` for status.
+> multi-game backbone. Next up: per-world mods (implemented, first deploy pending) and more games —
+> see `docs/DEVELOPMENT-PLAN.md` and `docs/GAME-CANDIDATES.md`.
 
 ## What it does
 
@@ -19,6 +19,8 @@ Start, stop, and join your server straight from Discord — and only pay for the
 - **Player-aware auto-shutdown** — idle detection via Steam **A2S** query (no log scraping)
 - **Stable join address** — connect via `your-subdomain.example.net:7777` (Route 53) instead of a changing IP
 - **World backups** — scheduled snapshots to S3, downloadable to local disk via the CLI
+- **Per-world mods** — an S3 mod library + a `mods` list per world; the host installs them on world
+  start, and `/gate mods` shows players what to install client-side (see `docs/mods.md`)
 - **Multi-game by design** — game-specific details live in a `GameProfile`; adding another co-op game
   later is "write a profile + deploy," not a rewrite
 
@@ -97,6 +99,8 @@ The server takes a few minutes to boot; the join address is posted to your chann
 | `/gate stop`   | Stop the server (backs up first; `force` skips the backup) |
 | `/gate status` | Server status + live player count |
 | `/gate join`   | Get the connection address (`host:7777`) |
+| `/gate worlds` | List the worlds this Discord server can start |
+| `/gate mods`   | A world's mod list — what players install to join (`docs/mods.md`) |
 | `/gate hail`   | A transmission from Dr. Derek Manse (ping test) |
 | `/gate help`   | List the commands |
 
@@ -115,6 +119,9 @@ npm run cli backup create                  # trigger a backup on the running ser
 npm run cli backup restore [name|latest]   # roll the server back to a backup
 npm run cli world push <dir> [name]        # upload a local/friend's save as a seed
 npm run cli world restore [name|latest]    # load a seed onto the running server
+npm run cli mods list                      # the S3 mod library (docs/mods.md)
+npm run cli mods add <zip> [name]          # ingest a downloaded mod (e.g. from Nexus)
+npm run cli mods import <Ns/Mod>           # pull from Thunderstore (games with a community)
 ```
 
 See `docs/cli.md` (including the save layout for seeding a friend's world).

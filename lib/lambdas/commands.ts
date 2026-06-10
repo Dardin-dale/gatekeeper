@@ -11,6 +11,8 @@ import { handleStartCommand } from "./commands/start";
 import { handleStopCommand } from "./commands/stop";
 import { handleStatusCommand } from "./commands/status";
 import { handleJoinCommand } from "./commands/join";
+import { handleModsCommand } from "./commands/mods";
+import { handleWorldsCommand } from "./commands/worlds";
 import { handleHailCommand } from "./commands/hail";
 import { handleHelpCommand } from "./commands/help";
 import { handleSetupCommand } from "./commands/setup";
@@ -107,6 +109,12 @@ export async function handler(
           return await handleHailCommand();
         case "join":
           return await handleJoinCommand();
+        case "mods": {
+          const worldName = subOptions?.find((o: any) => o.name === "world")?.value;
+          return await handleModsCommand(worldName, guild_id);
+        }
+        case "worlds":
+          return await handleWorldsCommand(guild_id);
         case "setup":
           return await handleSetupCommand(body);
         case "help":

@@ -22,6 +22,8 @@ export async function handleHelpCommand(): Promise<APIGatewayProxyResult> {
             "`/gate stop [force]` — stop the server (force skips the backup)",
             "`/gate status` — current status, world, players",
             "`/gate join` — how to connect",
+            "`/gate worlds` — the worlds you can start here",
+            "`/gate mods [world]` — a world's mod list (and what to install)",
           ].join("\n"),
         },
         {

@@ -56,6 +56,40 @@ describe('World Config Utilities', () => {
       expect(validateWorldConfig(config).some(e => e.includes('password'))).toBeTruthy();
     });
 
+    test('validates the mods field', () => {
+      const config: WorldConfig = {
+        name: 'Valid Name',
+        discordServerId: '123456789',
+        worldName: 'ValidWorld',
+        serverPassword: 'password123',
+        mods: ['CoolMod', 'Better_Lights-2.0'],
+      };
+      expect(validateWorldConfig(config)).toHaveLength(0);
+
+      config.mods = ['../escape'];
+      expect(validateWorldConfig(config).some(e => e.includes('Invalid mod name'))).toBeTruthy();
+      config.mods = ['has spaces'];
+      expect(validateWorldConfig(config).some(e => e.includes('Invalid mod name'))).toBeTruthy();
+      config.mods = 'CoolMod' as unknown as string[];
+      expect(validateWorldConfig(config).some(e => e.includes('must be an array'))).toBeTruthy();
+    });
+
+    test('parses mods through to the world config (empty list dropped)', () => {
+      const worlds = parseWorldConfigsFromJson(JSON.stringify([
+        {
+          name: 'Modded', worldName: 'ModdedSave', password: 'password123',
+          discordServerId: '123456789', mods: ['CoolMod'],
+        },
+        {
+          name: 'Vanilla', worldName: 'VanillaSave', password: 'password123',
+          discordServerId: '123456789', mods: [],
+        },
+      ]));
+      expect(worlds).toHaveLength(2);
+      expect(worlds[0].mods).toEqual(['CoolMod']);
+      expect(worlds[1].mods).toBeUndefined();
+    });
+
     test('validates the discordServerId field', () => {
       const config: WorldConfig = {
         name: 'Valid Name',
