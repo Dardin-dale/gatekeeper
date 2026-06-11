@@ -1,7 +1,7 @@
 import { APIGatewayProxyResult } from "aws-lambda";
 import { InteractionResponseType } from "./types";
 import { ACTIVE_GAME } from "../../games";
-import { getFastServerStatus } from "../utils/aws-clients";
+import { getFastServerStatus, getServerLive } from "../utils/aws-clients";
 import { personaEmbed, slash } from "./util/persona";
 import { buildJoinFields, joinHost, joinHint } from "./util/join-info";
 
@@ -39,6 +39,19 @@ export async function handleJoinCommand(): Promise<APIGatewayProxyResult> {
         title: "🔌 Join the server",
         description: `The server is not running (status: ${status}). ` +
           `Start it with \`${slash} start\` — the join address is posted here when it's ready.`,
+      })],
+    });
+  }
+
+  // Instance up but the game still loading: connecting fails and any join code
+  // in SSM would be last session's, so hold the details until the monitor
+  // flips server-live (the readiness ping posts them anyway).
+  if (!(await getServerLive())) {
+    return respond({
+      embeds: [personaEmbed({
+        title: "🔌 Join the server",
+        description: "The server is powering up but the game is still loading — " +
+          "the join details are posted here the moment it's joinable.",
       })],
     });
   }

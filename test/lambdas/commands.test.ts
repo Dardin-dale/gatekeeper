@@ -17,6 +17,7 @@ jest.mock('../../lib/lambdas/utils/aws-clients', () => {
   const mockSsmSend = jest.fn();
   const mockS3Send = jest.fn();
   const mockGetFastServerStatus = jest.fn();
+  const mockGetServerLive = jest.fn();
   const mockGetStatusMessage = jest.fn((status: string) => {
     switch (status) {
       case 'running': return 'Server is online and ready to play!';
@@ -30,6 +31,7 @@ jest.mock('../../lib/lambdas/utils/aws-clients', () => {
   (global as any).__mockSsmSend = mockSsmSend;
   (global as any).__mockS3Send = mockS3Send;
   (global as any).__mockGetFastServerStatus = mockGetFastServerStatus;
+  (global as any).__mockGetServerLive = mockGetServerLive;
   (global as any).__mockGetStatusMessage = mockGetStatusMessage;
 
   return {
@@ -50,12 +52,14 @@ jest.mock('../../lib/lambdas/utils/aws-clients', () => {
     getInstanceDetails: jest.fn(),
     getFastServerStatus: mockGetFastServerStatus,
     getStatusMessage: mockGetStatusMessage,
+    getServerLive: mockGetServerLive,
   };
 });
 
 // Get references to the actual mocks after modules are loaded
 const getMockVerifyKey = () => (global as any).__mockVerifyKey as jest.Mock;
 const getMockGetFastServerStatus = () => (global as any).__mockGetFastServerStatus as jest.Mock;
+const getMockGetServerLive = () => (global as any).__mockGetServerLive as jest.Mock;
 const getMockSsmSend = () => (global as any).__mockSsmSend as jest.Mock;
 
 // Import after mocking
@@ -96,6 +100,10 @@ describe('Commands Lambda', () => {
 
     // Default: signature verification passes
     getMockVerifyKey().mockResolvedValue(true);
+
+    // Default: the game answers liveness checks (server-live param 'true'/absent)
+    getMockGetServerLive().mockReset();
+    getMockGetServerLive().mockResolvedValue(true);
 
     // Default SSM behavior
     getMockSsmSend().mockRejectedValue({ name: 'ParameterNotFound' });
@@ -187,6 +195,30 @@ describe('Commands Lambda', () => {
       const body = JSON.parse(result.body);
       expect(body.type).toBe(4); // CHANNEL_MESSAGE_WITH_SOURCE
       expect(body.data.embeds).toBeDefined();
+    });
+
+    test('shows Starting (not Online) while the game is still loading', async () => {
+      getMockGetFastServerStatus().mockResolvedValue({
+        status: 'running',
+        message: 'Server is online and ready to play!',
+        launchTime: new Date(),
+        publicIp: '54.0.0.1',
+      });
+      getMockGetServerLive().mockResolvedValue(false);
+
+      const event = createDiscordEvent({
+        type: 2,
+        data: { name: 'gate', options: [{ name: 'status' }] },
+      });
+
+      const result = await handler(event, mockContext);
+
+      expect(result.statusCode).toBe(200);
+      const embed = JSON.parse(result.body).data.embeds[0];
+      const statusField = embed.fields.find((f: any) => f.name === 'Status');
+      expect(statusField.value).toContain('Starting');
+      // No join fields until the game is actually joinable.
+      expect(embed.fields.find((f: any) => f.name === '🌐 Address')).toBeUndefined();
     });
 
     test('returns 200 for status command when server is stopped', async () => {

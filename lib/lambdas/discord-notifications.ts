@@ -1,5 +1,5 @@
 import { EventBridgeEvent, Context } from 'aws-lambda';
-import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
+import { SSMClient, GetParameterCommand, PutParameterCommand } from '@aws-sdk/client-ssm';
 import { persona, personaEmbed, slash } from './commands/util/persona';
 import { ACTIVE_GAME } from '../games';
 
@@ -9,6 +9,26 @@ const ssmClient = new SSMClient();
 // SSM Parameter names (scoped to the active game's subtree)
 const ACTIVE_WORLD_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/active-world`;
 const DISCORD_WEBHOOK_BASE = `/gatekeeper/${ACTIVE_GAME.id}/discord-webhook`;
+const JOIN_CODE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/join-code`;
+const SERVER_LIVE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/server-live`;
+
+/**
+ * The join code is per-session: once the instance is stopped it's dead, and
+ * /gate join|status must not show it next boot. The host scripts clear these on
+ * their own stop paths, but this Lambda fires on EVERY stop — idle, /gate stop,
+ * crash, console — so it's the invalidation catch-all.
+ */
+async function invalidateSessionParams(): Promise<void> {
+  for (const [name, value] of [[JOIN_CODE_PARAM, 'none'], [SERVER_LIVE_PARAM, 'false']]) {
+    try {
+      await ssmClient.send(new PutParameterCommand({
+        Name: name, Value: value, Type: 'String', Overwrite: true,
+      }));
+    } catch (err) {
+      console.error(`Failed to invalidate ${name}:`, err);
+    }
+  }
+}
 
 /**
  * Discord notifications driven by EventBridge.
@@ -63,6 +83,7 @@ export async function handler(
     switch (eventType) {
       case 'EC2 Instance State-change Notification':
         if (event.detail.state === 'stopped') {
+          await invalidateSessionParams();
           message = handleEC2StoppedEvent(event.detail);
         }
         break;

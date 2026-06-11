@@ -22,6 +22,7 @@ import {
   getInstanceStatus,
   getStatusMessage,
   getFastServerStatus,
+  getServerLive,
 } from "../utils/aws-clients";
 import {
   createSuccessResponse,
@@ -50,8 +51,12 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
     // address-based (no join code); player count comes from the on-host A2S monitor.
     let activeWorld: string | undefined;
     let playerCount: number | undefined;
+    // Instance running !== game joinable: the host monitor flips server-live on
+    // its liveness transitions, so a booting game reads 'false' here.
+    let gameLive = true;
 
     if (status === 'running') {
+      gameLive = await getServerLive();
       try {
         const worldResult = await ssmClient.send(new GetParameterCommand({
           Name: SSM_PARAMS.ACTIVE_WORLD
@@ -104,11 +109,16 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
       statusText = 'Stopping';
       description = 'Server is shutting down...';
       embedColor = 0xff6600;
+    } else if (status === 'running' && !gameLive) {
+      statusEmoji = '⏳';
+      statusText = 'Starting';
+      description = `The instance is up, but the ${ACTIVE_GAME.displayName} server is still ` +
+        `loading. The readiness ping posts here with the join details once it's joinable.`;
+      embedColor = 0xffaa00;
     } else if (status === 'running') {
       statusEmoji = '✅';
       statusText = 'Online';
-      description = `The ${ACTIVE_GAME.displayName} server is online. ` +
-        `First boot can take a few minutes to finish loading.`;
+      description = `The ${ACTIVE_GAME.displayName} server is online.`;
       embedColor = 0x39a0a0;
     } else if (status === 'pending') {
       statusEmoji = '⏳';
@@ -140,7 +150,7 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
     }
 
     // Add player count if available (written by the on-host A2S monitor)
-    if (status === 'running' && playerCount !== undefined) {
+    if (status === 'running' && gameLive && playerCount !== undefined) {
       fields.push({
         name: 'Players',
         value: `👥 ${playerCount}`,
@@ -174,9 +184,9 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
       });
     }
 
-    // Join info while running — same per-game format as /gate join
-    // (address/port/password/lobby code via the shared util/join-info).
-    if (status === 'running' && ACTIVE_GAME.join.type === 'address') {
+    // Join info once the game is actually joinable — same per-game format as
+    // /gate join (address/port/password/lobby code via the shared util/join-info).
+    if (status === 'running' && gameLive && ACTIVE_GAME.join.type === 'address') {
       const host = joinHost(publicIp);
       if (host) {
         fields.push(...await buildJoinFields(host));

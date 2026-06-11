@@ -72,6 +72,7 @@ export const SSM_PARAMS = {
   BOOT_TIMEOUT_MINUTES: `${SSM_PREFIX}/boot-timeout-minutes`,
   PLAYER_COUNT: `${SSM_PREFIX}/player-count`,
   JOIN_CODE: `${SSM_PREFIX}/join-code`, // per-session lobby code scraped by the host monitor ('none' = absent)
+  SERVER_LIVE: `${SSM_PREFIX}/server-live`, // 'true' while the game answers the host monitor's liveness checks
   // Per-Discord-server default world: /gatekeeper/<game-id>/discord/<guild-id>/default-world
   GUILD_DEFAULT_WORLD_PREFIX: `${SSM_PREFIX}/discord`,
 };
@@ -81,6 +82,23 @@ export const SSM_PARAMS = {
  */
 export function getGuildDefaultWorldParam(guildId: string): string {
   return `${SSM_PARAMS.GUILD_DEFAULT_WORLD_PREFIX}/${guildId}/default-world`;
+}
+
+/**
+ * Whether the game itself is up, as opposed to just the EC2 instance: the host
+ * monitor writes 'true'/'false' on liveness transitions and 'false' at session
+ * start/stop. A missing parameter counts as live so sessions predating the flag
+ * (or a wiped param) never suppress join info.
+ */
+export async function getServerLive(): Promise<boolean> {
+  try {
+    const result = await ssmClient.send(new GetParameterCommand({
+      Name: SSM_PARAMS.SERVER_LIVE,
+    }));
+    return result.Parameter?.Value !== 'false';
+  } catch (err) {
+    return true;
+  }
 }
 
 /**

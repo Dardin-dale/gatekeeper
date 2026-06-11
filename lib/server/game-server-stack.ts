@@ -844,11 +844,14 @@ EOF`,
             timeout: Duration.seconds(30),
         });
 
-        // Grant SSM permissions for webhook and world config access
+        // Grant SSM permissions for webhook and world config access, plus
+        // PutParameter: on the stopped event this Lambda invalidates the
+        // per-session join-code/server-live params (the catch-all stop path).
         discordNotificationsFunction.addToRolePolicy(new PolicyStatement({
             actions: [
                 "ssm:GetParameter",
                 "ssm:GetParameters",
+                "ssm:PutParameter",
             ],
             resources: [
                 `arn:aws:ssm:${this.region}:${this.account}:parameter/gatekeeper/${ACTIVE_GAME.id}/*`

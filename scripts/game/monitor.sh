@@ -58,10 +58,27 @@ AUTO_SHUTDOWN_PARAM="/gatekeeper/${GAME_ID}/auto-shutdown-minutes"
 BOOT_TIMEOUT_PARAM="/gatekeeper/${GAME_ID}/boot-timeout-minutes"
 ACTIVE_WORLD_PARAM="/gatekeeper/${GAME_ID}/active-world"
 JOIN_CODE_PARAM="/gatekeeper/${GAME_ID}/join-code"
+SERVER_LIVE_PARAM="/gatekeeper/${GAME_ID}/server-live"
+
+put_param() { # $1 = name, $2 = value (best-effort)
+  aws ssm put-parameter --name "$1" --type String --value "$2" --overwrite \
+    --region "$REGION" > /dev/null 2>&1
+}
+# Invalidate the previous session in SSM: the join code is per-session, so until
+# this run's scrape lands, /gate join|status must see 'none' — not last run's
+# dead code. server-live=false tells the lambdas the game isn't joinable yet.
+invalidate_session_params() {
+  put_param "$JOIN_CODE_PARAM" "none"
+  put_param "$SERVER_LIVE_PARAM" "false"
+}
 
 # Fresh session: clear edge/idle state so stale files can't trigger an instant shutdown.
 rm -f "$SEEN_LIVE_FLAG" "$LIVE_STATE_FILE"
 date +%s > "$ACTIVITY_FILE"
+invalidate_session_params
+MISS_COUNT=0          # consecutive failed liveness checks (for down-debounce)
+LAST_PLAYERS=0        # last good player count (held through a debounced blip)
+PUBLISHED_JOIN_CODE="" # join code currently in SSM (rewrite only on change)
 BOOT_START=$(date +%s) # for the boot-timeout safety net (server-never-comes-up guard)
 log "Monitoring $GAME_ID (A2S 127.0.0.1:$QUERY_PORT, game port $GAME_PORT)"
 
@@ -124,25 +141,44 @@ while true; do
     fi
   fi
 
+  # --- Down-debounce: one missed check while live is UDP noise; two in a row
+  #     (a cycle apart) is a real outage. Hold the last player count through a
+  #     debounced blip so idle tracking and the SSM count don't see a phantom 0. ---
+  if [ "$LIVE" = true ]; then
+    MISS_COUNT=0
+  elif [ -f "$LIVE_STATE_FILE" ]; then
+    MISS_COUNT=$((MISS_COUNT + 1))
+    if [ "$MISS_COUNT" -lt 2 ]; then
+      log "Liveness check missed once — debouncing (treating as still live)"
+      LIVE=true
+      PLAYERS=$LAST_PLAYERS
+    fi
+  fi
+  LAST_PLAYERS=$PLAYERS
+
   # --- Readiness: first transition to live this session ---
   WAS_LIVE=$( [ -f "$LIVE_STATE_FILE" ] && echo 1 || echo 0 )
   if [ "$LIVE" = true ]; then
     echo 1 > "$LIVE_STATE_FILE"
+    [ "$WAS_LIVE" = 0 ] && put_param "$SERVER_LIVE_PARAM" "true"
+    # Per-session lobby/join code: re-scraped EVERY live cycle (the pattern comes
+    # from the profile; the code is the last token of the latest match) because
+    # crossplay codes can rotate mid-session when the server re-registers with
+    # PlayFab. SSM is rewritten only when the code actually changes.
+    JOIN_CODE=""
+    if [ -n "$JOIN_CODE_PATTERN" ]; then
+      JOIN_CODE=$(docker logs "$CONTAINER_NAME" 2>&1 | grep -oE "$JOIN_CODE_PATTERN" | tail -1 | awk '{print $NF}')
+      if [ -n "$JOIN_CODE" ] && [ "$JOIN_CODE" != "$PUBLISHED_JOIN_CODE" ]; then
+        put_param "$JOIN_CODE_PARAM" "$JOIN_CODE"
+        PUBLISHED_JOIN_CODE="$JOIN_CODE"
+        log "Session join code: $JOIN_CODE"
+      fi
+    fi
     if [ ! -f "$SEEN_LIVE_FLAG" ]; then
       touch "$SEEN_LIVE_FLAG"
       # Prefer the stable derived domain; fall back to the public IP.
       JOIN_HOST="${GAME_DOMAIN:-}"
       [ -z "$JOIN_HOST" ] && JOIN_HOST=$(imds public-ipv4)
-      # Per-session lobby/join code: scrape the container logs (pattern from the
-      # profile; the code is the last token of the latest match) and publish to
-      # SSM so /gate join can show it. 'none' = scrape found nothing.
-      JOIN_CODE=""
-      if [ -n "$JOIN_CODE_PATTERN" ]; then
-        JOIN_CODE=$(docker logs "$CONTAINER_NAME" 2>&1 | grep -oE "$JOIN_CODE_PATTERN" | tail -1 | awk '{print $NF}')
-        aws ssm put-parameter --name "$JOIN_CODE_PARAM" --type String \
-          --value "${JOIN_CODE:-none}" --overwrite --region "$REGION" > /dev/null 2>&1
-        log "Session join code: ${JOIN_CODE:-not found}"
-      fi
       log "Server is LIVE (first time this session) at ${JOIN_HOST}:${JOIN_PORT}"
       # The active world's password (players need it for Direct Connect).
       SERVER_PASSWORD=$(aws ssm get-parameter --name "$ACTIVE_WORLD_PARAM" --region "$REGION" \
@@ -165,6 +201,7 @@ while true; do
     fi
   else
     rm -f "$LIVE_STATE_FILE"
+    [ "$WAS_LIVE" = 1 ] && put_param "$SERVER_LIVE_PARAM" "false"
   fi
 
   # --- Player count -> SSM + CloudWatch ---
@@ -184,6 +221,7 @@ while true; do
       if [ "$BOOTED" -gt $((BOOT_TIMEOUT * 60)) ]; then
         log "Server never came online after ${BOOT_TIMEOUT}m — stopping (likely a failed boot)"
         post_discord "⚠️ Server Failed to Start" "The server didn't come online within ${BOOT_TIMEOUT} minutes. Stopping to avoid charges — try \`/gate start\` again (the next boot is faster, the download is cached)." 15158332
+        invalidate_session_params
         aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region "$REGION"
         break
       fi
@@ -204,10 +242,14 @@ while true; do
       log "Idle threshold exceeded — backing up and shutting down"
       post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904
       /usr/local/bin/backup-server.sh || log "WARNING: backup failed; stopping anyway (data persists on EBS)"
+      invalidate_session_params
       aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region "$REGION"
       break
     fi
   fi
 
-  sleep 120
+  # Two-speed cadence: fast until the first liveness this session — boot is
+  # exactly when people are watching Discord for the readiness ping/join code —
+  # then relaxed, since idle accounting only needs minute resolution.
+  if [ -f "$SEEN_LIVE_FLAG" ]; then sleep 120; else sleep 15; fi
 done

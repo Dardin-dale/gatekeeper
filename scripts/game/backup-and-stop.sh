@@ -28,5 +28,16 @@ else
   log "WARNING: backup failed; stopping anyway (data persists on the RETAIN'd EBS volume)"
 fi
 
+# Invalidate the per-session join code + live flag so /gate join|status never
+# show this session's dead lobby code after the stop. (The notifications Lambda
+# clears these too, as the catch-all for stops that bypass this script.)
+GAME_ID=$(jq -r '.id' /etc/gatekeeper/game-profile.json 2>/dev/null)
+if [ -n "$GAME_ID" ]; then
+  aws ssm put-parameter --name "/gatekeeper/${GAME_ID}/join-code" --type String \
+    --value "none" --overwrite --region "$REGION" > /dev/null 2>&1
+  aws ssm put-parameter --name "/gatekeeper/${GAME_ID}/server-live" --type String \
+    --value "false" --overwrite --region "$REGION" > /dev/null 2>&1
+fi
+
 log "Stopping instance $INSTANCE_ID"
 aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region "$REGION"
