@@ -56,31 +56,44 @@ export async function handleSetupCommand(interaction: any): Promise<APIGatewayPr
     }
 
     if (existingWebhook) {
-      // Test if the existing webhook still works
+      // The guild has ONE notification webhook, pinned to whichever channel it
+      // was created in. If setup runs in a DIFFERENT channel, the user clearly
+      // wants notifications HERE — fall through to create a fresh webhook in
+      // this channel (replacing the SSM param; the old one is deleted below).
       try {
-        const testResponse = await fetch(existingWebhook, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content: '✅ Webhook is already configured and working!',
-            username: persona.characterName,
-          }),
-        });
-
-        if (testResponse.ok) {
-          return respond({
-            embeds: [personaEmbed({
-              title: '📢 Notifications Active',
-              description: `${persona.botName} is already set up to send notifications in this server.`,
-              extra: {
-                fields: [{
-                  name: 'Need to change channels?',
-                  value: `Delete the webhook in this channel's settings and run \`${slash} setup\` in the new channel.`,
-                  inline: false
-                }],
-              },
-            })],
-          });
+        const infoResponse = await fetch(existingWebhook);
+        if (infoResponse.ok) {
+          const info: any = await infoResponse.json();
+          if (info.channel_id === channel_id) {
+            const testResponse = await fetch(existingWebhook, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                content: '✅ Webhook is already configured and working!',
+                username: persona.characterName,
+                ...(persona.thumbnailUrl ? { avatar_url: persona.thumbnailUrl } : {}),
+              }),
+            });
+            if (testResponse.ok) {
+              return respond({
+                embeds: [personaEmbed({
+                  title: '📢 Notifications Active',
+                  description: `${persona.botName} already sends notifications to this channel.`,
+                  extra: {
+                    fields: [{
+                      name: 'Need to change channels?',
+                      value: `Run \`${slash} setup\` in the new channel — notifications move there.`,
+                      inline: false
+                    }],
+                  },
+                })],
+              });
+            }
+          } else {
+            console.log(`Webhook lives in channel ${info.channel_id}, setup ran in ${channel_id} — moving`);
+            // Best-effort cleanup of the old webhook before replacing it.
+            await fetch(existingWebhook, { method: 'DELETE' }).catch(() => {});
+          }
         }
       } catch (err) {
         console.log('Existing webhook is no longer valid, creating new one');
