@@ -39,6 +39,7 @@ import { InteractionResponseType } from "./types";
 import { ACTIVE_GAME } from "../../games";
 import { personaEmbed, slash } from "./util/persona";
 import { buildJoinFields, joinHost } from "./util/join-info";
+import { getScheduledOpening } from "./schedule";
 
 export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
   try {
@@ -170,6 +171,21 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
         value: uptimeHours > 0 ? `${uptimeHours}h ${remainingMinutes}m` : `${uptimeMinutes}m`,
         inline: true,
       });
+    }
+
+    // Next scheduled opening, if one is set (best-effort — never block status)
+    try {
+      const opening = await getScheduledOpening();
+      if (opening && opening.opensAtEpoch > Date.now()) {
+        const t = Math.floor(opening.opensAtEpoch / 1000);
+        fields.push({
+          name: 'Next Opening',
+          value: `📅 <t:${t}:R>${opening.worldName ? ` (${opening.worldName})` : ''}`,
+          inline: true,
+        });
+      }
+    } catch (err) {
+      console.log('Could not read scheduled opening');
     }
 
     // Add auto-shutdown info

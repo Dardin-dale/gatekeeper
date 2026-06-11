@@ -72,8 +72,12 @@ lib/games/
 ## Discord commands (`/gate <sub>`)
 
 `hail` (persona ping) · `start [world]` · `stop [force]` · `status` · `join` · `worlds` ·
-`mods [world]` · `setup` · `help`.
+`mods [world]` · `schedule set|clear|list` · `setup` · `help`.
 Dispatch lives in `lib/lambdas/commands.ts`; each subcommand is a handler in `lib/lambdas/commands/`.
+Scheduled openings use EventBridge Scheduler (one-time schedules in a per-game group) firing
+`lib/lambdas/scheduler.ts`, which pre-warms the instance `prewarm-minutes` (SSM, default 10)
+before the announced time and posts T-60/T-10 countdown webhooks. Input times parse in
+`SCHEDULE_TZ` (env, default America/Los_Angeles); display is Discord-native timestamps.
 
 ## Config & secrets
 

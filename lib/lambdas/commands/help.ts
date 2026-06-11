@@ -24,6 +24,7 @@ export async function handleHelpCommand(): Promise<APIGatewayProxyResult> {
             `\`${slash} join\` — how to connect`,
             `\`${slash} worlds\` — the worlds you can start here`,
             `\`${slash} mods [world]\` — a world's mod list (and what to install)`,
+            `\`${slash} schedule set|clear|list\` — schedule an opening (pre-warms on time)`,
           ].join("\n"),
         },
         {

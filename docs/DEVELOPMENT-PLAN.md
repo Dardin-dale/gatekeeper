@@ -191,9 +191,18 @@ Triggered by a real boot: `/gate status` said Online while the game was still lo
 - [x] **Alpha world live**: the group's real save seeded via `world push Alpha` + restore
       (`bootstrap/abiotic-factor/Alpha.tar.gz`).
 
-### Phase 11 — Scheduled openings (PLANNED — design agreed 2026-06-11, no code yet)
+### Phase 11 — Scheduled openings (v1 IMPLEMENTED 2026-06-11; `every` remains v2)
 "Game night mode": the world opens itself at an announced time, with persona countdown messages.
 Every primitive already exists; this is a thin feature, not new architecture.
+
+**v1 shipped:** `/gate schedule set|clear|list` (subcommand group) → `commands/schedule.ts`;
+one-time schedules (`open`, `countdown-60`, `countdown-10`, ActionAfterCompletion=DELETE so they
+self-clean) in the `gatekeeper-<game-id>` Scheduler group → `lambdas/scheduler.ts` (pre-warm
+start with the world frozen into the payload at scheduling time + countdown webhooks).
+Time parsing is a pure util (`utils/schedule-time.ts`, tested incl. DST); display is
+Discord-native `<t:epoch>` timestamps so SCHEDULE_TZ only governs input. `/gate status` shows
+the next opening. STILL OPEN: measure real boot→live lead from the journal and set
+`prewarm-minutes` (SSM) from p95 — code defaults to 10.
 
 **Decided:**
 - **v1 commands**: `/gate schedule <when> [world]` (set one upcoming opening — setting again

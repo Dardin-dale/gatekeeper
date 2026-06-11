@@ -73,6 +73,7 @@ export const SSM_PARAMS = {
   PLAYER_COUNT: `${SSM_PREFIX}/player-count`,
   JOIN_CODE: `${SSM_PREFIX}/join-code`, // per-session lobby code scraped by the host monitor ('none' = absent)
   SERVER_LIVE: `${SSM_PREFIX}/server-live`, // 'true' while the game answers the host monitor's liveness checks
+  PREWARM_MINUTES: `${SSM_PREFIX}/prewarm-minutes`, // scheduled openings: start this many minutes before the announced time
   // Per-Discord-server default world: /gatekeeper/<game-id>/discord/<guild-id>/default-world
   GUILD_DEFAULT_WORLD_PREFIX: `${SSM_PREFIX}/discord`,
 };

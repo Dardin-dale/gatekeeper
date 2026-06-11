@@ -1,0 +1,103 @@
+import { EC2Client, StartInstancesCommand } from '@aws-sdk/client-ec2';
+import { GetParameterCommand, PutParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
+import { ACTIVE_GAME } from '../games';
+import { WorldConfig } from './utils/world-config';
+import { persona } from './commands/util/persona';
+
+/**
+ * Scheduled-openings Lambda (Phase 11) — the EventBridge Scheduler target.
+ *
+ * /gate schedule set creates one-time schedules in the per-game group that
+ * invoke this function:
+ *   - action "start" at the pre-warm instant (announced time minus
+ *     prewarm-minutes): write the world resolved AT SCHEDULING TIME to the
+ *     active-world param, then start the instance — the same effect as
+ *     /gate start, minus Discord plumbing. The readiness ping announces the
+ *     actual "doors open".
+ *   - action "countdown" at T-60/T-10: post a persona webhook message with a
+ *     native Discord timestamp (renders in each viewer's local timezone).
+ *
+ * Schedules are created with ActionAfterCompletion=DELETE, so a fired schedule
+ * cleans itself up — "no scheduled opening" is the natural state afterwards.
+ */
+
+const ec2Client = new EC2Client();
+const ssmClient = new SSMClient();
+
+const SERVER_INSTANCE_ID = process.env.SERVER_INSTANCE_ID || '';
+const SSM_PREFIX = `/gatekeeper/${ACTIVE_GAME.id}`;
+
+export interface ScheduleFireEvent {
+  action: 'start' | 'countdown';
+  opensAtEpoch: number;       // the ANNOUNCED opening (not the pre-warm instant)
+  guildId?: string;           // for webhook resolution (countdown posts)
+  world?: WorldConfig | null; // resolved when the schedule was created
+  minutesBefore?: number;     // countdown label (60, 10)
+}
+
+export async function handler(event: ScheduleFireEvent): Promise<void> {
+  console.log('Schedule fired:', JSON.stringify({ ...event, world: event.world?.name }));
+
+  if (event.action === 'start') {
+    if (event.world) {
+      await ssmClient.send(new PutParameterCommand({
+        Name: `${SSM_PREFIX}/active-world`,
+        Value: JSON.stringify(event.world),
+        Type: 'String',
+        Overwrite: true,
+      }));
+      console.log(`Active world set to ${event.world.name}`);
+    }
+    if (!SERVER_INSTANCE_ID) throw new Error('SERVER_INSTANCE_ID not set');
+    // No-op if already running — someone starting early never breaks the schedule.
+    await ec2Client.send(new StartInstancesCommand({ InstanceIds: [SERVER_INSTANCE_ID] }));
+    console.log(`Instance ${SERVER_INSTANCE_ID} start requested (scheduled opening ` +
+      `at ${new Date(event.opensAtEpoch).toISOString()})`);
+    return;
+  }
+
+  if (event.action === 'countdown') {
+    const url = await getWebhookUrl(event.guildId);
+    if (!url) {
+      console.log('No webhook configured; skipping countdown post');
+      return;
+    }
+    const t = Math.floor(event.opensAtEpoch / 1000);
+    const payload = {
+      username: persona.characterName,
+      ...(persona.thumbnailUrl ? { avatar_url: persona.thumbnailUrl } : {}),
+      embeds: [{
+        title: '📅 Scheduled Opening',
+        description:
+          `The ${ACTIVE_GAME.displayName} server opens <t:${t}:R> — <t:${t}:t>.\n` +
+          `${event.world?.name ? `World: **${event.world.name}**. ` : ''}` +
+          `The join details are posted here the moment it's ready.`,
+        color: 0xffaa00,
+        ...(persona.footer ? { footer: { text: persona.footer } } : {}),
+      }],
+    };
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      console.error(`Countdown webhook post failed: ${response.status}`);
+    }
+  }
+}
+
+/** The guild webhook (SecureString) — same per-guild param the host scripts use. */
+async function getWebhookUrl(guildId?: string): Promise<string | undefined> {
+  if (!guildId) return undefined;
+  try {
+    const result = await ssmClient.send(new GetParameterCommand({
+      Name: `${SSM_PREFIX}/discord-webhook/${guildId}`,
+      WithDecryption: true,
+    }));
+    return result.Parameter?.Value || undefined;
+  } catch (err) {
+    console.log(`No webhook for guild ${guildId}`);
+    return undefined;
+  }
+}

@@ -16,6 +16,7 @@ import { handleWorldsCommand } from "./commands/worlds";
 import { handleHailCommand } from "./commands/hail";
 import { handleHelpCommand } from "./commands/help";
 import { handleSetupCommand } from "./commands/setup";
+import { handleScheduleCommand } from "./commands/schedule";
 import { handleComponentInteraction } from "./commands/component";
 
 const { verifyKey } = require("discord-interactions");
@@ -143,6 +144,12 @@ export async function handler(
         }
         case "status":
           return await handleStatusCommand();
+        case "schedule": {
+          // Subcommand group: the actual action (set|clear|list) is one level
+          // down — options[0] of the group, with its own options.
+          const action = subOptions?.[0];
+          return await handleScheduleCommand(action?.name, action?.options, guild_id);
+        }
         default:
           return unknown;
       }

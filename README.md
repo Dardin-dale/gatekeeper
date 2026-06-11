@@ -109,6 +109,7 @@ The server takes a few minutes to boot; the join address is posted to your chann
 | `/gate join`   | Get the connection address (`host:7777`) |
 | `/gate worlds` | List the worlds this Discord server can start |
 | `/gate mods`   | A world's mod list — what players install to join (`docs/mods.md`) |
+| `/gate schedule set\|clear\|list` | Schedule an opening — pre-warms early so it's joinable at the announced time |
 | `/gate hail`   | A transmission from Dr. Derek Manse (ping test) |
 | `/gate help`   | List the commands |
 

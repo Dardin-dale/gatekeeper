@@ -29,6 +29,7 @@ import {
 import { Bucket } from "aws-cdk-lib/aws-s3";
 import { BucketDeployment, Source } from "aws-cdk-lib/aws-s3-deployment";
 import { Rule, Schedule } from "aws-cdk-lib/aws-events";
+import { CfnScheduleGroup } from "aws-cdk-lib/aws-scheduler";
 import { LambdaFunction } from "aws-cdk-lib/aws-events-targets";
 import { Runtime } from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
@@ -799,6 +800,71 @@ EOF`,
         });
         
         commandsFunction.addToRolePolicy(ssmCommandsPolicy);
+
+        // --- Scheduled openings (Phase 11) ---------------------------------
+        // /gate schedule creates one-time EventBridge Scheduler schedules in a
+        // per-game group; they invoke this small Lambda to pre-warm the
+        // instance and post countdown messages. Kept separate from the
+        // commands Lambda so the Discord-facing role stays minimal.
+        const schedulerFunction = new NodejsFunction(this, "SchedulerFunction", {
+            ...lambdaDefaultProps,
+            entry: path.join(__dirname, '../lambdas/scheduler.ts'),
+            handler: "handler",
+            timeout: Duration.minutes(2),
+        });
+        new LogGroup(this, 'SchedulerFunctionLogGroup', {
+            logGroupName: `/aws/lambda/${schedulerFunction.functionName}`,
+            retention: RetentionDays.ONE_DAY
+        });
+        schedulerFunction.addToRolePolicy(ec2ControlPolicy);
+        schedulerFunction.addToRolePolicy(new PolicyStatement({
+            actions: ["ssm:GetParameter", "ssm:PutParameter"],
+            resources: [
+                `arn:aws:ssm:${this.region}:${this.account}:parameter/gatekeeper/${ACTIVE_GAME.id}/*`
+            ],
+        }));
+
+        const scheduleGroup = new CfnScheduleGroup(this, "ScheduleGroup", {
+            name: `gatekeeper-${ACTIVE_GAME.id}`,
+        });
+
+        // The role EventBridge Scheduler assumes to invoke the Lambda; the
+        // commands Lambda passes it on CreateSchedule (hence the scoped PassRole).
+        const schedulerInvokeRole = new Role(this, "SchedulerInvokeRole", {
+            assumedBy: new ServicePrincipal("scheduler.amazonaws.com"),
+            description: "Assumed by EventBridge Scheduler to fire GATEKeeper scheduled openings",
+        });
+        schedulerFunction.grantInvoke(schedulerInvokeRole);
+
+        commandsFunction.addEnvironment("SCHEDULER_GROUP", scheduleGroup.name!);
+        commandsFunction.addEnvironment("SCHEDULER_TARGET_ARN", schedulerFunction.functionArn);
+        commandsFunction.addEnvironment("SCHEDULER_ROLE_ARN", schedulerInvokeRole.roleArn);
+        // Input timezone for `/gate schedule set when:` — display uses Discord
+        // native timestamps, so this only governs how typed times are read.
+        commandsFunction.addEnvironment("SCHEDULE_TZ", process.env.SCHEDULE_TZ || "America/Los_Angeles");
+
+        commandsFunction.addToRolePolicy(new PolicyStatement({
+            actions: [
+                "scheduler:CreateSchedule",
+                "scheduler:DeleteSchedule",
+                "scheduler:GetSchedule",
+            ],
+            resources: [
+                `arn:aws:scheduler:${this.region}:${this.account}:schedule/${scheduleGroup.name}/*`
+            ],
+        }));
+        commandsFunction.addToRolePolicy(new PolicyStatement({
+            actions: ["scheduler:ListSchedules"],
+            resources: ["*"], // list op: no resource-level scoping
+        }));
+        commandsFunction.addToRolePolicy(new PolicyStatement({
+            actions: ["iam:PassRole"],
+            resources: [schedulerInvokeRole.roleArn],
+            conditions: {
+                StringEquals: { "iam:PassedToService": "scheduler.amazonaws.com" },
+            },
+        }));
+        // -------------------------------------------------------------------
 
         // Grant limited SSM access to backup cleanup function (read-only)
         const ssmBackupPolicy = new PolicyStatement({
