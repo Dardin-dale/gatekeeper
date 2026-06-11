@@ -36,7 +36,7 @@ export async function sendFollowUpMessage(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'HuginBot/1.0',
+          'User-Agent': 'GATEKeeper/1.0',
         },
         body: JSON.stringify(content),
         signal: controller.signal,

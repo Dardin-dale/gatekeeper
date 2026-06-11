@@ -223,7 +223,7 @@ describe('GameServerStack', () => {
   describe('API Gateway Configuration', () => {
     test('creates REST API for Discord integration', () => {
       template.hasResourceProperties('AWS::ApiGateway::RestApi', {
-        Name: 'HuginBot Discord API',
+        Name: 'GATEKeeper Discord API',
       });
     });
 

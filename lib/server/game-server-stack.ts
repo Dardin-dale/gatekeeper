@@ -880,8 +880,12 @@ EOF`,
         backupCleanupFunction.addToRolePolicy(ssmBackupPolicy);
 
         // Create API Gateway
-        const api = new RestApi(this, "HuginbotApi", {
-            restApiName: "HuginBot Discord API",
+        // Renamed from the huginbot-era "HuginbotApi" 2026-06-11 — a construct-ID
+        // change REPLACES the API Gateway (new endpoint URL), so each game's
+        // Discord Interactions Endpoint URL must be re-pasted in the Developer
+        // Portal right after the deploy that carries this.
+        const api = new RestApi(this, "GatekeeperApi", {
+            restApiName: "GATEKeeper Discord API",
             description: "API for the Discord bot to control the game server",
             endpointTypes: [EndpointType.REGIONAL],
         });

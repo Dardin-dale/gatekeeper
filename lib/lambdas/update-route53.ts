@@ -123,7 +123,7 @@ async function updateRoute53Record(domain: string, ipAddress: string): Promise<v
     const changeParams = {
       HostedZoneId: hostedZoneId,
       ChangeBatch: {
-        Comment: `Updated by HuginBot - ${new Date().toISOString()}`,
+        Comment: `Updated by GATEKeeper - ${new Date().toISOString()}`,
         Changes: [
           {
             Action: ChangeAction.UPSERT,
