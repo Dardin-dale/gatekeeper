@@ -14,12 +14,18 @@ const {
   S3Client,
   ListObjectsV2Command,
   PutObjectCommand,
+  GetObjectCommand,
 } = require('@aws-sdk/client-s3');
 const { SSMClient, SendCommandCommand } = require('@aws-sdk/client-ssm');
 const { GAME_ID, REGION, stackOutput } = require('../lib/context');
 
 const BOOTSTRAP_PREFIX = `bootstrap/${GAME_ID}/`;
 const BACKUPS_PREFIX = `backups/${GAME_ID}/`;
+
+// Local seed staging: expanded save dirs (and pulled seed archives) live in
+// local/seeds/<game-id>/ — `world push <name>` resolves bare names here, and
+// `world pull` downloads here. Mirrors local/backups/<game-id>/ for backup pull.
+const SEEDS_DIR = path.join(process.cwd(), 'local', 'seeds', GAME_ID);
 
 // Best-effort profile load (for layout hints). Needs a prior `npm run build`.
 function gameProfile() {
@@ -63,15 +69,26 @@ async function list() {
 async function push(srcPath, name) {
   if (!srcPath) {
     console.error(
-      'Usage: npm run cli world push <save-dir|archive.tar.gz> [name]\n' +
-      'The directory must be laid out like the data volume root (see docs/cli.md).'
+      'Usage: npm run cli world push <save-dir|archive.tar.gz|name> [name]\n' +
+      'The directory must be laid out like the data volume root (see docs/cli.md).\n' +
+      `Bare names resolve in the staging dir: ${SEEDS_DIR}`
     );
     process.exit(1);
   }
-  const src = path.resolve(srcPath);
+  // Resolve the source: an explicit path, or a bare name in the seed staging
+  // dir (local/seeds/<game-id>/<name>/ or <name>.tar.gz).
+  let src = path.resolve(srcPath);
   if (!fs.existsSync(src)) {
-    console.error(`Not found: ${src}`);
-    process.exit(1);
+    const staged = [
+      path.join(SEEDS_DIR, srcPath),
+      path.join(SEEDS_DIR, `${srcPath}.tar.gz`),
+    ].find((p) => fs.existsSync(p));
+    if (!staged) {
+      console.error(`Not found: ${src} (also tried ${path.join(SEEDS_DIR, srcPath)})`);
+      process.exit(1);
+    }
+    src = staged;
+    if (!name) name = srcPath.replace(/\.tar\.gz$/, '');
   }
 
   let archivePath = src;
@@ -118,6 +135,39 @@ async function push(srcPath, name) {
 }
 
 /**
+ * Download a seed archive to the local staging dir (local/seeds/<game-id>/).
+ * Mirrors `backup pull`; the result can be re-pushed or unpacked for editing.
+ */
+async function pull(which = 'latest') {
+  const { bucket, items } = await listArchives(BOOTSTRAP_PREFIX);
+  if (!items.length) {
+    console.log(`No seed archives to pull for ${GAME_ID} in s3://${bucket}/${BOOTSTRAP_PREFIX}`);
+    return;
+  }
+  const target = which === 'latest'
+    ? items[0]
+    : items.find((o) => o.Key.endsWith(which) || o.Key.slice(BOOTSTRAP_PREFIX.length) === which);
+  if (!target) {
+    console.error(`Seed archive '${which}' not found. Run 'npm run cli world list' to see options.`);
+    process.exit(1);
+  }
+
+  fs.mkdirSync(SEEDS_DIR, { recursive: true });
+  const outFile = path.join(SEEDS_DIR, path.basename(target.Key));
+
+  const s3 = new S3Client({ region: REGION });
+  const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: target.Key }));
+  await new Promise((resolve, reject) => {
+    const ws = fs.createWriteStream(outFile);
+    obj.Body.on('error', reject);
+    ws.on('error', reject);
+    ws.on('finish', resolve);
+    obj.Body.pipe(ws);
+  });
+  console.log(`Downloaded s3://${bucket}/${target.Key}\n        -> ${outFile}`);
+}
+
+/**
  * Restore an archive onto the server via SSM (the server must be running).
  * kind: 'bootstrap' (world restore) or 'backups' (backup restore).
  */
@@ -161,4 +211,4 @@ async function restore(which = 'latest', kind = 'bootstrap') {
   );
 }
 
-module.exports = { list, push, restore };
+module.exports = { list, push, pull, restore };

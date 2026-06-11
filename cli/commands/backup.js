@@ -53,7 +53,7 @@ async function pull(which = 'latest') {
     process.exit(1);
   }
 
-  const outDir = path.join(process.cwd(), 'local', 'backups');
+  const outDir = path.join(process.cwd(), 'local', 'backups', GAME_ID);
   fs.mkdirSync(outDir, { recursive: true });
   const outFile = path.join(outDir, path.basename(target.Key));
 

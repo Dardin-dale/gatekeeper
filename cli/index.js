@@ -16,11 +16,13 @@ function usage() {
 
 Usage:
   npm run cli backup list                    List S3 backups for the active game
-  npm run cli backup pull [name|latest]      Download a backup to ./local/backups
+  npm run cli backup pull [name|latest]      Download a backup to ./local/backups/<game>
   npm run cli backup create                  Trigger a backup on the running server
   npm run cli backup restore [name|latest]   Restore a backup onto the running server
 
   npm run cli world push <dir|tar.gz> [name] Upload a local save as a seed archive
+                                             (bare names resolve in ./local/seeds/<game>)
+  npm run cli world pull [name|latest]       Download a seed archive to ./local/seeds/<game>
   npm run cli world list                     List uploaded seed archives
   npm run cli world restore [name|latest]    Restore a seed archive onto the running server
 
@@ -50,6 +52,7 @@ async function main() {
 
   if (group === 'world') {
     if (sub === 'push') return world.push(rest[0], rest[1]);
+    if (sub === 'pull') return world.pull(rest[0]);
     if (sub === 'list') return world.list();
     if (sub === 'restore') return world.restore(rest[0], 'bootstrap');
   }

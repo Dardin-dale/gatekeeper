@@ -9,7 +9,8 @@
 #   AF_PASSWORD=seabuds AF_WORLD=Alpha docker compose -f docker-compose.local.yml up
 #
 # First boot is SLOW: SteamCMD downloads the server (app 2857200) under Wine into
-# ./local/gamefiles (gitignored). Saves persist in ./local/data. Give it several minutes.
+# ./local/server/abiotic-factor/gamefiles (gitignored). Saves persist in
+# ./local/server/abiotic-factor/data. Give it several minutes.
 #
 # Validate once it's up (in another terminal):
 #   node scripts/game/a2s-query.js 127.0.0.1 27015
@@ -33,6 +34,6 @@ services:
       - "7777:7777/udp"   # game
       - "27015:27015/udp" # Steam A2S query
     volumes:
-      - ./local/gamefiles:/server
-      - ./local/data:/server/AbioticFactor/Saved
+      - ./local/server/abiotic-factor/gamefiles:/server
+      - ./local/server/abiotic-factor/data:/server/AbioticFactor/Saved
     restart: "no"

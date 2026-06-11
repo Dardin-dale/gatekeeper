@@ -123,7 +123,7 @@ discovers the bucket/instance from the deployed stack — nothing to configure b
 
 ```bash
 npm run cli backup list                    # S3 backups for the active game (GAME=<id>)
-npm run cli backup pull [name|latest]      # download a backup to ./local/backups
+npm run cli backup pull [name|latest]      # download a backup to ./local/backups/<game-id>
 npm run cli backup create                  # trigger a backup on the running server
 npm run cli backup restore [name|latest]   # roll the server back to a backup
 npm run cli world push <dir> [name]        # upload a local/friend's save as a seed
