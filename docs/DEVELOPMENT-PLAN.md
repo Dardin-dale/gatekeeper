@@ -191,7 +191,7 @@ Triggered by a real boot: `/gate status` said Online while the game was still lo
 - [x] **Alpha world live**: the group's real save seeded via `world push Alpha` + restore
       (`bootstrap/abiotic-factor/Alpha.tar.gz`).
 
-### Phase 11 — Scheduled openings (v1 IMPLEMENTED 2026-06-11; `every` remains v2)
+### Phase 11 — Scheduled openings (✅ v1 DEPLOYED both stacks 2026-06-11; `every` remains v2)
 "Game night mode": the world opens itself at an announced time, with persona countdown messages.
 Every primitive already exists; this is a thin feature, not new architecture.
 
@@ -208,6 +208,13 @@ update-day tail risk), Valheim **6**. Re-measure if images or instance types cha
 **Decided 2026-06-11:** keep explicit `set|clear|list` (flattened implicit-set rejected —
 discoverability beats keystrokes for a friend group); ONE webhook per guild stays (multi-webhook
 would N-loop every sender for little gain — `/gate setup` now moves the channel instead).
+**Shipped same night:** persona flavor pools (`Persona.lines.scheduled[]`/`countdown[]`, random
+pick with neutral fallback) for Manse + Munin; `/gate setup` moves the guild webhook to whichever
+channel runs it (old webhook deleted) and the already-configured ping got its missing persona
+avatar; `npm run deploy` now auto-registers slash commands (postdeploy hook) and carries
+`--require-approval never`. First production schedule: AF, Mon 2026-06-15 20:00 PT. Phase-10
+invalidation paths (session-start / first-live / stop-script / Lambda catch-all) all verified
+live via join-code parameter history during the night's test sessions.
 
 **Decided:**
 - **v1 commands**: `/gate schedule <when> [world]` (set one upcoming opening — setting again

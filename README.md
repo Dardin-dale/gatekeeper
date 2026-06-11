@@ -28,6 +28,18 @@ you actually play. Each game gets its own bot persona, stack, and slash command.
   start, and `/gate mods` shows players what to install client-side (see `docs/mods.md`)
 - **Multi-game by design** — game-specific details live in a `GameProfile`; adding another co-op game
   later is "write a profile + deploy," not a rewrite
+- **Scheduled openings** — `/gate schedule set when:fri 19:30` pre-warms the server so it's joinable
+  at the announced time, with in-character countdown posts at T−60/T−10
+
+## The Cast
+
+Every game gets its own bot, command, and in-character persona — all driven by `GameProfile.persona`.
+
+| | Persona | Game · Command | Bio |
+|---|---|---|---|
+| <img src="images/DrDerekManse.webp" width="72" alt="Dr. Derek Manse"> | **Dr. Derek Manse** | Abiotic Factor · `/gate` | Director, GATE Cascade Research Facility. Clinical, condescending, comprehensively insured. His pre-recorded holograms announce openings, countdowns, and your statistical odds. *It's time for Science!* |
+| <img src="images/Munin.webp" width="72" alt="Munin"> | **Munin** | Valheim · `/munin` | The Allfather's raven of *memory*. Remembers your worlds, your deeds, and exactly when game night starts — reminding you is rather his whole purpose. |
+| <img src="images/Hugin.jpg" width="72" alt="Hugin"> | **Hugin** | *(in rehearsal)* | The other raven — *thought* to Munin's memory. Manages nothing, comments on everything. Being reborn as a flavor-only companion bot in a separate repo. |
 
 ## Architecture
 
