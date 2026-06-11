@@ -21,6 +21,16 @@ export function pickHailQuote(): string {
 }
 
 /**
+ * Random pick from an optional persona line pool (e.g. lines.scheduled,
+ * lines.countdown), falling back to a neutral default for profiles that
+ * haven't written flavor for that moment yet.
+ */
+export function pickLine(pool: string[] | undefined, fallback: string): string {
+  if (!pool || pool.length === 0) return fallback;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
  * Standard embed footer. Just the suffix (default: the persona's flavor
  * footer) — the bot's name/avatar already head every message via its Discord
  * app theming, so repeating botName here was pure duplication.

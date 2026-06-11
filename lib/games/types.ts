@@ -226,5 +226,9 @@ export interface Persona {
     starting?: string;
     /** Final EC2-stopped notification. Default: 'The server has shut down completely.' */
     offline?: string;
+    /** /gate schedule set confirmations (random pick). Neutral default when omitted. */
+    scheduled?: string[];
+    /** Scheduled-opening countdown posts at T-60/T-10 (random pick). Neutral default. */
+    countdown?: string[];
   };
 }

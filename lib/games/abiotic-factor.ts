@@ -101,6 +101,19 @@ export const abioticFactor: GameProfile = {
     lines: {
       starting: 'The facility is powering up.',
       offline: 'The facility has powered down completely.',
+      scheduled: [
+        "It's time for Science! Or it will be, at the appointed hour. The facility opens on schedule — tardiness is noted in your permanent file.",
+        'Science has been scheduled. Do arrive with all original limbs; replacements are billed to your department.',
+        'An opening has been arranged. The portals will be exactly as unstable as you left them.',
+        'Noted and filed. The facility opens on schedule — reality permitting. It usually permits. Mostly.',
+      ],
+      countdown: [
+        'Attention employees: the facility opens shortly. Begin your commute — the anomalies certainly have.',
+        'A reminder from Director Manse: doors open soon. Coffee is available in the break room, assuming the break room is still available.',
+        'Facility opening imminent. Safety briefing: do not die. That concludes the safety briefing.',
+        'The GATE warms as we speak. Science waits for no one — it merely outlives them.',
+        "It's almost time for Science! Kindly conclude your personal affairs; the timeline won't survey itself.",
+      ],
     },
     // First-person, in the voice of Director Manse's facility holograms:
     // authoritative, clinical, faintly condescending.

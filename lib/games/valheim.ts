@@ -85,6 +85,17 @@ export const valheim: GameProfile = {
     lines: {
       starting: 'The ravens take wing — your world is waking.',
       offline: 'The world sleeps. Every deed is remembered.',
+      scheduled: [
+        'It is decided. The hall opens at the appointed hour — Odin has marked the time, and so have I.',
+        'The longship is provisioned and the hour is set. Valhalla can wait a little longer.',
+        'So it is written in the runes (and in the schedule). I will not let you forget — remembering is rather my whole purpose.',
+      ],
+      countdown: [
+        'The hall opens soon. Sharpen your axes, braid your beards, hide from the bees.',
+        'Hugin flies ahead — the brazier is lit and the mead is poured. Soon.',
+        'Soon the serpent stirs and the hall stands open. Do not keep the Allfather waiting.',
+        'The ravens circle the meadhall. Gather your wood, warriors — you always need more wood.',
+      ],
     },
     // Munin is memory to Hugin's thought: he remembers, records, and recalls.
     hailQuotes: [

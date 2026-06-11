@@ -11,7 +11,7 @@ import { ssmClient, SSM_PARAMS, getGuildDefaultWorldParam } from "../utils/aws-c
 import { WORLD_CONFIGS, WorldConfig, getDefaultWorldConfig } from "../utils/world-config";
 import { parseWhen, WhenParseError } from "../utils/schedule-time";
 import { InteractionResponseType } from "./types";
-import { personaEmbed, slash } from "./util/persona";
+import { persona, personaEmbed, pickLine, slash } from "./util/persona";
 import type { ScheduleFireEvent } from "../scheduler";
 
 /**
@@ -142,10 +142,12 @@ async function handleSet(
   }
 
   const t = Math.floor(opensAtEpoch / 1000);
+  const flavor = pickLine(persona.lines?.scheduled, "Opening scheduled.");
   return respond({
     embeds: [personaEmbed({
       title: "📅 Opening Scheduled",
       description:
+        `${flavor}\n\n` +
         `The server opens <t:${t}:F> (<t:${t}:R>).\n` +
         `It pre-warms ${prewarmMinutes} minutes early so it's joinable on time; ` +
         "the join details post here when it's ready.",

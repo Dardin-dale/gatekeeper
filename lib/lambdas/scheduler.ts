@@ -2,7 +2,7 @@ import { EC2Client, StartInstancesCommand } from '@aws-sdk/client-ec2';
 import { GetParameterCommand, PutParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { ACTIVE_GAME } from '../games';
 import { WorldConfig } from './utils/world-config';
-import { persona } from './commands/util/persona';
+import { persona, pickLine } from './commands/util/persona';
 
 /**
  * Scheduled-openings Lambda (Phase 11) — the EventBridge Scheduler target.
@@ -63,15 +63,21 @@ export async function handler(event: ScheduleFireEvent): Promise<void> {
       return;
     }
     const t = Math.floor(event.opensAtEpoch / 1000);
+    // Persona flavor leads; the operational line below it carries the facts.
+    const flavor = pickLine(
+      persona.lines?.countdown,
+      `The ${ACTIVE_GAME.displayName} server opens soon.`,
+    );
     const payload = {
       username: persona.characterName,
       ...(persona.thumbnailUrl ? { avatar_url: persona.thumbnailUrl } : {}),
       embeds: [{
         title: '📅 Scheduled Opening',
         description:
-          `The ${ACTIVE_GAME.displayName} server opens <t:${t}:R> — <t:${t}:t>.\n` +
-          `${event.world?.name ? `World: **${event.world.name}**. ` : ''}` +
-          `The join details are posted here the moment it's ready.`,
+          `${flavor}\n\n` +
+          `Doors open <t:${t}:R> — <t:${t}:t>.` +
+          `${event.world?.name ? `\nWorld: **${event.world.name}**.` : ''}` +
+          `\nThe join details are posted here the moment it's ready.`,
         color: 0xffaa00,
         ...(persona.footer ? { footer: { text: persona.footer } } : {}),
       }],
