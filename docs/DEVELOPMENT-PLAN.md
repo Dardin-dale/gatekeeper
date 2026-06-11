@@ -201,8 +201,13 @@ self-clean) in the `gatekeeper-<game-id>` Scheduler group → `lambdas/scheduler
 start with the world frozen into the payload at scheduling time + countdown webhooks).
 Time parsing is a pure util (`utils/schedule-time.ts`, tested incl. DST); display is
 Discord-native `<t:epoch>` timestamps so SCHEDULE_TZ only governs input. `/gate status` shows
-the next opening. STILL OPEN: measure real boot→live lead from the journal and set
-`prewarm-minutes` (SSM) from p95 — code defaults to 10.
+the next opening. **Pre-warm measured 2026-06-11** (CloudTrail StartInstances × join-code SSM
+param history = boot→first-live per session): AF 2m32s–4m44s across three boots, Valheim 4m54s
+(older points inflated ≤2 min by the pre-Phase-10 120s poll). Set: AF **8** (Wine/SteamCMD
+update-day tail risk), Valheim **6**. Re-measure if images or instance types change.
+**Decided 2026-06-11:** keep explicit `set|clear|list` (flattened implicit-set rejected —
+discoverability beats keystrokes for a friend group); ONE webhook per guild stays (multi-webhook
+would N-loop every sender for little gain — `/gate setup` now moves the channel instead).
 
 **Decided:**
 - **v1 commands**: `/gate schedule <when> [world]` (set one upcoming opening — setting again
