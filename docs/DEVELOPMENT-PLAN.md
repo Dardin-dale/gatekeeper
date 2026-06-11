@@ -96,9 +96,9 @@ no always-on EventBridge.
       runs the configured world + password instead of the passwordless image defaults
       (`/gate start` overwrites the param at runtime; CFN only resets it when the seeded value
       changes); **gitignored Jest snapshots** + pointed CDK tests at `test/fixtures/config/` —
-      the tracked snapshot had embedded the real `WORLDS_JSON` (password + guild ID). NOTE: the
-      secret remains in local git history — rotate the world password or scrub history before
-      pushing the repo.
+      the tracked snapshot had embedded the real `WORLDS_JSON` (password + guild ID).
+      ✅ RESOLVED 2026-06-11: history was squashed; a full-history scan (`git grep` across every
+      rev for the password/`WORLDS_JSON` content) finds no trace. Safe to push.
 - [x] **World bootstrap CLI** — `cli world push|list|restore` + `cli backup restore`, backed by the
       on-host `scripts/game/restore-world.sh` (SSM-triggered: stop game → safety backup → extract →
       restart). Seeds live under `bootstrap/<game-id>/` so rotation can't eat them; one archive
@@ -110,7 +110,9 @@ no always-on EventBridge.
       `HuginbotApiEndpoint...` stack output) with display name "HuginBot Discord API". The
       `restApiName` *property* is safe to change in place, but renaming the *construct ID* REPLACES
       the API Gateway → new endpoint URL → re-wire the Discord Interactions Endpoint URL after.
-      Do it alongside some other instance-replacing change, not casually.
+      **DECIDED 2026-06-11: this rename is a REQUIRED RIDER on the next replacing change** —
+      whatever next forces an API/instance replacement carries it; never ship a replacing change
+      without it, never do it alone.
 - [x] **Real deploy** — live and operating (AL2023 host; IMDSv2 ping fix debugged against the
       running instance). Redeployed 2026-06-10 onto the Phase-9 baseline.
 
@@ -142,8 +144,11 @@ persona never collide with the legacy huginbot during migration. GjurdsIHOP migr
 huginbot backup (`cli world push/restore`), BetterNetworking via `cli mods import`, adminIds mapped
 to `ADMINLIST_IDS`, per-world `extraArgs` (`-crossplay -modifier resources more`). Full
 start→play→stop→offline cycle verified in Discord. Checklist + field notes: `docs/GAME-CANDIDATES.md`.
-Remaining: retire the huginbot stack once Munin has earned trust. **Next game: Core Keeper**
-(prereq: optional-password contract change; design in GAME-CANDIDATES).
+**Huginbot is SOFT-RETIRED (2026-06-11)**: no longer used, still deployed as the safety net while
+Munin earns trust over a few real game nights. Then `cdk destroy` it (the RETAIN'd EBS keeps the
+world; final state already in `bootstrap/valheim/GjurdsIHOP.tar.gz` + `local/seeds/valheim/`).
+**Next game: Core Keeper** — parked deliberately; no new games wanted right now
+(prereq when revisited: optional-password contract change; design in GAME-CANDIDATES).
 
 ### Phase 9 — Presence + crossplay monitoring (✅ 2026-06-10, shipped with the Valheim deploy)
 - [x] **Presence sidecar** (`presence.js` + `game-presence.service`): a gateway connection from the
@@ -164,9 +169,76 @@ Remaining: retire the huginbot stack once Munin has earned trust. **Next game: C
 - [x] **Fix:** don't publish the A2S query port separately when a UDP range covers it (Valheim's
       2457 ⊂ 2456-2458 → Docker "port is already allocated" broke the first boot).
 
+### Phase 10 — Session-state correctness + repo hygiene (✅ 2026-06-11, both stacks deployed)
+Triggered by a real boot: `/gate status` said Online while the game was still loading, showing the
+*previous* session's lobby code.
+- [x] **Join-code invalidation on every stop path** (the code is per-session; nothing ever cleared
+      SSM): monitor session start + its own idle/boot-timeout stops, `backup-and-stop.sh`
+      (`/gate stop`), and the notifications Lambda on the EC2-stopped event as the crash-proof
+      catch-all (new `ssm:PutParameter` grant). Game-agnostic — Valheim (rotating PlayFab codes)
+      benefits most.
+- [x] **`server-live` SSM flag** — "instance running" ≠ "game joinable". Monitor flips it on
+      liveness edges; `/gate status` shows ⏳ Starting (no join fields/player count) and
+      `/gate join` holds details until it's true. Missing param counts as live (back-compat).
+- [x] **Monitor quality**: two-speed cadence (15s until first liveness — when humans watch
+      Discord — then 120s), join code re-scraped every live cycle (SSM rewritten only on change;
+      catches mid-session PlayFab rotation), 2-miss down-debounce (one dropped A2S packet can't
+      flap state or phantom-zero the player count).
+- [x] **Repo hygiene**: dropped huginbot leftover root dirs (`backups/`, `worlds/`, `mods/`,
+      `examples/`); `local/` restructured as purpose/`<game-id>` (`backups/`, `seeds/`,
+      `server/` — see `docs/cli.md`); `cli world pull` added; `world push` resolves bare names in
+      `local/seeds/<game-id>/`.
+- [x] **Alpha world live**: the group's real save seeded via `world push Alpha` + restore
+      (`bootstrap/abiotic-factor/Alpha.tar.gz`).
+
+### Phase 11 — Scheduled openings (PLANNED — design agreed 2026-06-11, no code yet)
+"Game night mode": the world opens itself at an announced time, with persona countdown messages.
+Every primitive already exists; this is a thin feature, not new architecture.
+
+**Decided:**
+- **v1 commands**: `/gate schedule <when> [world]` (set one upcoming opening — setting again
+  replaces it) and `/gate schedule clear`. **v2 (only if v1 sticks): `/gate schedule every`**
+  (e.g. Monday 20:00 recurring). Keep `<when>` parsing strict (weekday + HH:MM, or HH:MM for
+  "today/tomorrow") — no natural-language parsing.
+- **Engine**: EventBridge **Scheduler** (not classic rules) — native one-time schedules AND
+  `ScheduleExpressionTimezone`, so zero TZ math. One schedule group per game
+  (`gatekeeper-<game-id>`); `clear` deletes the group's schedules. Cost ~$0.
+- **What fires**: the `/gate start` core (resolve world → write `active-world` → start instance),
+  refactored out of the command handler into a shared util so a scheduled invoke and the Discord
+  command run identical code.
+- **Pre-warm**: the instance starts `prewarm-minutes` BEFORE the announced time so the world is
+  joinable AT the announced time. New SSM param `/gatekeeper/<game-id>/prewarm-minutes`
+  (default ~10 until measured). **First task: measure real boot→live lead time** from the host
+  journal (`game-monitor`'s "Monitoring" line → "Server is LIVE" line) over the next few
+  sessions; set the default to p95 + a minute. (2026-06-11 instance was already asleep when this
+  was written — measure next session.)
+- **Countdowns**: extra one-time schedules at T-60/T-10 (relative to the announced time, not the
+  pre-warm) posting persona messages via the existing guild webhook ("The facility opens in one
+  hour"). The existing readiness ping is the final "it's open" — with the Phase-10 15s boot
+  cadence it lands on time.
+- **No hard close.** Idle auto-shutdown already closes the night organically; a scheduled stop
+  could kill someone's run mid-dungeon. Explicitly rejected.
+
+**To design during implementation:** target wiring (separate tiny scheduler Lambda vs. the
+commands Lambda with a synthetic event — leaning tiny Lambda so Discord-facing IAM stays minimal);
+`scheduler:*` + `iam:PassRole` grants; where the announce TZ lives (single env var first,
+per-guild SSM only if someone asks); whether `/gate status` should show the next scheduled
+opening (probably yes, cheap); `register-commands` + persona lines for countdown flavor; tests
+(handler unit tests + a synth assertion on the schedule group).
+
 ---
 
 ## Future directions (deferred)
+
+### Valheim image log-filter event hooks (nicety, not a simplification)
+The community Valheim image supports `ON_VALHEIM_LOG_FILTER_*` env hooks (run a command when a log
+line matches). Evaluated 2026-06-11: does NOT simplify the monitor — the poll loop must exist
+anyway (idle/boot-timeout/metrics decide when to stop the *instance*), hooks are per-image
+(AF has none), and they run inside the credential-poor container. Where they'd add value later:
+event-driven join-code capture (hook writes the code to a file on the shared bind mount; the host
+monitor reads it — no creds in the container) and player join/leave Discord announcements. Config
+would live entirely in `valheim.ts` `staticEnv` + a generic "also check this file" branch in the
+monitor.
 
 ### Public assets bucket for persona images (TODO)
 Today `persona.thumbnailUrl` hotlinks the Manse hologram from the Abiotic Factor wiki
