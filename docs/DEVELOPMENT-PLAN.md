@@ -197,9 +197,14 @@ Every primitive already exists; this is a thin feature, not new architecture.
 
 **Decided:**
 - **v1 commands**: `/gate schedule <when> [world]` (set one upcoming opening — setting again
-  replaces it) and `/gate schedule clear`. **v2 (only if v1 sticks): `/gate schedule every`**
-  (e.g. Monday 20:00 recurring). Keep `<when>` parsing strict (weekday + HH:MM, or HH:MM for
-  "today/tomorrow") — no natural-language parsing.
+  replaces it), `/gate schedule clear`, and `/gate schedule list` (what's set, in local time).
+  **v2 (only if v1 sticks): `/gate schedule every`** (e.g. Monday 20:00 recurring). Effort note:
+  `every` is marginal on top of v1 — EventBridge Scheduler takes the same CreateSchedule call with
+  a `cron(...)` + timezone instead of a one-time `at(...)`; the only new logic is offset
+  arithmetic (pre-warm/countdown times shifted across a day boundary, e.g. Mon 00:05 − 60m =
+  Sun 23:05). A forgotten recurring night self-limits: boot + 20 min idle ≈ $0.05. The v1/v2
+  split is product restraint, not difficulty. Keep `<when>` parsing strict (weekday + HH:MM, or
+  HH:MM for "today/tomorrow") — no natural-language parsing.
 - **Engine**: EventBridge **Scheduler** (not classic rules) — native one-time schedules AND
   `ScheduleExpressionTimezone`, so zero TZ math. One schedule group per game
   (`gatekeeper-<game-id>`); `clear` deletes the group's schedules. Cost ~$0.

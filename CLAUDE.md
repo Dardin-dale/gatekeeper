@@ -1,8 +1,8 @@
 # GATEKeeper — Development Guide
 
 GATEKeeper is a cost-effective, **multi-game** AWS server manager controlled from Discord, built
-on a `GameProfile` abstraction. The first (and currently only deployed) game is **Abiotic Factor**;
-Valheim exists as a profile stub to prove the abstraction. Adapted from
+on a `GameProfile` abstraction. Two games are deployed: **Abiotic Factor** (`/gate`) and
+**Valheim** (`/munin`). Adapted from
 [huginbot](https://github.com/Dardin-dale/huginbot) (a Valheim-only predecessor).
 
 The roadmap and phase history live in `docs/DEVELOPMENT-PLAN.md`. Read that for context.
@@ -25,7 +25,7 @@ lib/games/
   types.ts            GameProfile interface (the plugin contract)
   index.ts            registry, ACTIVE_GAME, runtimeProfile(), gameDomain()
   abiotic-factor.ts   the live profile (image, env map, volumes, ports, persona)
-  valheim.ts          stub profile (join-code game) — proves the abstraction
+  valheim.ts          the second live profile (join-code game, crossplay/A2S-silent)
   _template.ts        copy-me scaffold for a new game
 ```
 

@@ -67,8 +67,8 @@ GAME=valheim npm run cli backup list     # point the CLI at that game's stack
 
 Adding a game = write a profile (copy `lib/games/_template.ts`, see `docs/adding-a-game.md`), add
 its `config/<game>.worlds.json` + Discord app creds, and deploy with its `GAME` id. This is what
-lets GATEKeeper run alongside the original huginbot Valheim stack on the same AWS account without
-any resource collisions.
+lets multiple GATEKeeper games — and any unrelated stacks — share one AWS account without
+resource collisions.
 
 ## Quick start
 
@@ -113,8 +113,7 @@ The server takes a few minutes to boot; the join address is posted to your chann
 | `/gate help`   | List the commands |
 
 > The top-level command is the game's own (`commandName` in its profile): `/gate` for Abiotic Factor,
-> `/munin` for Valheim (Munin — the other raven — so it never collides with a legacy huginbot in
-> the same guild). That keeps the picker unambiguous when bots share a Discord server.
+> `/munin` for Valheim. That keeps the picker unambiguous when bots share a Discord server.
 
 ## CLI
 
