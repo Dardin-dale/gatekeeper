@@ -106,13 +106,11 @@ no always-on EventBridge.
       rotated huginbot's `worlds/` prefix — i.e. rotation NEVER ran against `backups/<game-id>/` —
       and removed the dead `worldBootstrapLocation` first-boot user-data seam it replaces.
 - [ ] Optional: refresh the remaining secondary setup guides (`aws-setup`, `troubleshooting`).
-- [ ] **Legacy API naming cleanup** — the REST API construct is still `HuginbotApi` (shows up as the
-      `HuginbotApiEndpoint...` stack output) with display name "HuginBot Discord API". The
-      `restApiName` *property* is safe to change in place, but renaming the *construct ID* REPLACES
-      the API Gateway → new endpoint URL → re-wire the Discord Interactions Endpoint URL after.
-      **DECIDED 2026-06-11: this rename is a REQUIRED RIDER on the next replacing change** —
-      whatever next forces an API/instance replacement carries it; never ship a replacing change
-      without it, never do it alone.
+- [x] **Legacy API naming cleanup** — ✅ DONE 2026-06-11 (user opted to take the replacement
+      standalone rather than wait for a rider): `HuginbotApi` → `GatekeeperApi`, display name
+      "GATEKeeper Discord API", followup User-Agent + Route 53 comment de-branded. Both API
+      Gateways were REPLACED — new endpoint URLs re-pasted into each Discord app's Interactions
+      Endpoint URL in the Developer Portal.
 - [x] **Real deploy** — live and operating (AL2023 host; IMDSv2 ping fix debugged against the
       running instance). Redeployed 2026-06-10 onto the Phase-9 baseline.
 
