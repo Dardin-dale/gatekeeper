@@ -4,10 +4,6 @@ A cost-effective, **multi-game** AWS dedicated-server manager with Discord integ
 Start, stop, mod, and join your co-op servers straight from Discord — and only pay for the hours
 you actually play. Each game gets its own bot persona, stack, and slash command.
 
-> *"This is a recorded message from Director Manse. The Cascade facility is online."*
-> The Abiotic Factor bot speaks as **Dr. Derek Manse**; the Valheim bot is **Munin**, the
-> All-Father's memory raven.
-
 > **Status: two games live** — Abiotic Factor (`GateStack-AbioticFactor`, `/gate`) and Valheim
 > (`GateStack-Valheim`, `/munin`), each with per-world mods and a presence sidecar. Adapted from
 > [huginbot](https://github.com/Dardin-dale/huginbot) (a Valheim-only predecessor) onto a generic
@@ -39,7 +35,7 @@ Every game gets its own bot, command, and in-character persona — all driven by
 |---|---|---|---|
 | <img src="images/DrDerekManse.webp" width="72" alt="Dr. Derek Manse"> | **Dr. Derek Manse** | Abiotic Factor · `/gate` | Director, GATE Cascade Research Facility. Clinical, condescending, comprehensively insured. His pre-recorded holograms announce openings, countdowns, and your statistical odds. *It's time for Science!* |
 | <img src="images/Munin.webp" width="72" alt="Munin"> | **Munin** | Valheim · `/munin` | The Allfather's raven of *memory*. Remembers your worlds, your deeds, and exactly when game night starts — reminding you is rather his whole purpose. |
-| <img src="images/Hugin.jpg" width="72" alt="Hugin"> | **Hugin** | *(in rehearsal)* | The other raven — *thought* to Munin's memory. Manages nothing, comments on everything. Being reborn as a flavor-only companion bot in a separate repo. |
+| <img src="images/GATEKeeper.png" width="72" alt="Old Man"> | TBD | TBD | Feel free to make an Issue or pull request for a new Game! |
 
 ## Architecture
 
