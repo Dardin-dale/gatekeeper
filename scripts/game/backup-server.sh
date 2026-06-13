@@ -42,6 +42,7 @@ DATA_HOST=$(jq -r '.volumes[-1].hostPath' "$PROFILE")
 # stop, idle shutdown, or `cli backup create` — confirms itself in Discord.
 PERSONA_NAME=$(jq -r '.persona.characterName // "GATEKeeper"' "$PROFILE")
 PERSONA_AVATAR=$(jq -r '.persona.thumbnailUrl // empty' "$PROFILE")
+PERSONA_FOOTER=$(jq -r '.persona.footer // empty' "$PROFILE")
 get_webhook_url() {
   local wj guild
   wj=$(aws ssm get-parameter --name "/gatekeeper/${GAME_ID}/active-world" --region "$REGION" --query "Parameter.Value" --output text 2>/dev/null) || return 1
@@ -54,10 +55,11 @@ post_discord() { # $1 = title, $2 = description, $3 = color (decimal)
   local url; url=$(get_webhook_url) || { log "no webhook configured; skipping Discord post"; return 0; }
   { [ -z "$url" ] || [ "$url" = "None" ]; } && { log "no webhook configured; skipping Discord post"; return 0; }
   local payload
-  payload=$(jq -n --arg name "$PERSONA_NAME" --arg avatar "$PERSONA_AVATAR" \
+  payload=$(jq -n --arg name "$PERSONA_NAME" --arg avatar "$PERSONA_AVATAR" --arg footer "$PERSONA_FOOTER" \
     --arg title "$1" --arg desc "$2" --argjson color "$3" \
-    '{username: $name, embeds: [{author: {name: $name}, title: $title, description: $desc, color: $color, footer: {text: "GATE Cascade Research Facility"}}]}
-     | if $avatar != "" then .avatar_url = $avatar | .embeds[0].author.icon_url = $avatar else . end')
+    '{username: $name, embeds: [{title: $title, description: $desc, color: $color}]}
+     | if $footer != "" then .embeds[0].footer = {text: $footer} else . end
+     | if $avatar != "" then .avatar_url = $avatar else . end')
   curl -s -m 10 -H "Content-Type: application/json" -X POST "$url" -d "$payload" \
     > /dev/null 2>&1 || log "WARNING: Discord post failed"
 }
