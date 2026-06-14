@@ -478,7 +478,7 @@ EOF`,
             properties: {
                 VolumeId: dataVolume.ref,
                 // Trigger update when deployment version changes
-                DeploymentVersion: '2026-06-10-v5',
+                DeploymentVersion: '2026-06-13-v6',
             },
         });
 
@@ -492,7 +492,18 @@ EOF`,
             instanceType: instanceType,
             // AL2023: its repos carry Node 18 natively (AL2's glibc is too old
             // for any supported Node, which silently broke the A2S monitor).
-            machineImage: MachineImage.latestAmazonLinux2023(),
+            // PINNED, not latestAmazonLinux2023(): "latest" resolves to a fresh SSM
+            // value whenever AWS rotates the image, so EVERY unrelated deploy (even a
+            // Lambda-only change) silently triggered an instance replacement + the
+            // DeploymentVersion volume hand-off. cdk diff hid it (the template held an
+            // SSM {{resolve}} ref, not the literal id). Pinning means the AMI only
+            // changes when we bump it deliberately — then also bump DeploymentVersion.
+            // Refresh: aws ssm get-parameter --name \
+            //   /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
+            //   --query Parameter.Value --output text   (then update id + DeploymentVersion)
+            machineImage: MachineImage.genericLinux({
+                'us-west-2': 'ami-0d45a4eba03d1e2cf', // al2023-ami-2023.12.20260611.0-kernel-6.1-x86_64
+            }),
             securityGroup: securityGroup,
             userData: userData,
             // User-data runs only at first boot, so a changed bootstrap must
@@ -515,7 +526,7 @@ EOF`,
         });
 
         // Add deployment version tag to force replacement when needed
-        Tags.of(this.ec2Instance).add('DeploymentVersion', '2026-06-10-v5');
+        Tags.of(this.ec2Instance).add('DeploymentVersion', '2026-06-13-v6');
 
         // Ensure volume is detached from old instances before new instance is created
         this.ec2Instance.node.addDependency(volumeDetach);

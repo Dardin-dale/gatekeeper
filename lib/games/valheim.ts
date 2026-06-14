@@ -76,7 +76,7 @@ export const valheim: GameProfile = {
   persona: {
     botName: 'MuninBot',
     characterName: 'Munin',
-    color: 0x4a6b8a, // cold fjord blue — distinct from huginbot's embeds
+    color: 0x8b0000, // dark red — Muninn, Odin's raven of memory; distinct from huginbot's purple
     // Munin art from the Valheim wiki — verified a direct image (200 image/webp,
     // not hotlink-blocked). TODO(assets-bucket): self-host alongside the Manse
     // hologram when the public assets bucket lands.
