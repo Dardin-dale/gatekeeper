@@ -46,14 +46,32 @@ export interface GameProfile {
   queryPort: number;
 
   /**
-   * Optional A2S fallback: an ERE matched against container logs whose latest
-   * match's LAST number is the current player count; a recent match (<5 min)
-   * also counts as liveness. Needed when a game stops answering A2S in some
-   * mode — Valheim with -crossplay switches to PlayFab networking and goes
-   * A2S-silent, but heartbeats "... is active with N player(s)" to its log.
-   * (Interim form of the QueryStrategy carve-out — see docs/GAME-CANDIDATES.md.)
+   * Optional A2S fallback for the PLAYER COUNT: an ERE matched against the
+   * container's FULL log (not a time window) whose LATEST match's LAST number is
+   * the current count. Use the game's join/LEAVE *event* lines so the latest one
+   * always reflects the live count — for Valheim, "... now N player(s)" (logged
+   * on every join and disconnect). Do NOT point this at a periodic "N players
+   * online" heartbeat: under crossplay that heartbeat can be PlayFab-blind and
+   * report a stale 0, which would idle-kill a connected player. The full-log
+   * (un-windowed) scrape is deliberate — a player who joined and then sat quietly
+   * emits no new line, so a windowed scrape would read 0 and shut them down.
+   * Needed when a game stops answering A2S in some mode (Valheim -crossplay ->
+   * PlayFab networking goes A2S-silent). See livenessLogPattern for the matching
+   * "server is up" signal. (Interim QueryStrategy carve-out — docs/GAME-CANDIDATES.md.)
    */
   playersLogPattern?: string;
+
+  /**
+   * Optional A2S-silent LIVENESS signal: an ERE matched against the container's
+   * full log; any match means the server is up/joinable. Distinct from
+   * playersLogPattern because the count must come from join/leave events (which
+   * only appear once players come and go), while liveness needs a signal present
+   * at 0 players the moment the server registers — for Valheim, the recurring
+   * session heartbeat "... is active with N player(s)". Drives the readiness ping
+   * and keeps the boot-timeout from killing a healthy empty server. Only consulted
+   * when A2S is silent and playersLogPattern is set.
+   */
+  livenessLogPattern?: string;
 
   /** Default EC2 instance type (overridable via the INSTANCE_TYPE env var). */
   instanceType: string;

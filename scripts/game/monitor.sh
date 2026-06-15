@@ -42,10 +42,17 @@ QUERY_PORT=$(jq -r '.queryPort' "$PROFILE")
 GAME_PORT=$(jq -r '.ports[0].from' "$PROFILE")
 CONTAINER_NAME=$(jq -r '.containerName' "$PROFILE")
 JOIN_CODE_PATTERN=$(jq -r '.joinCodePattern // empty' "$PROFILE")
-# A2S fallback (e.g. Valheim -crossplay goes A2S-silent): an ERE whose latest
-# log match carries the player count as its last number; a match within the
-# last 5 minutes also counts as liveness.
+# A2S fallback (e.g. Valheim -crossplay goes A2S-silent). Two distinct EREs,
+# matched against the FULL container log (not a time window):
+#   PLAYERS_LOG_PATTERN  - the latest match's last number = current player count;
+#                          point it at join/LEAVE event lines ("... now N player(s)")
+#                          so the latest one reflects the live count.
+#   LIVENESS_LOG_PATTERN - any match = server is up/joinable; point it at a
+#                          heartbeat present even at 0 players ("... is active with
+#                          N player(s)"). Separate because the count must not come
+#                          from a heartbeat that can report a stale 0 under crossplay.
 PLAYERS_LOG_PATTERN=$(jq -r '.playersLogPattern // empty' "$PROFILE")
+LIVENESS_LOG_PATTERN=$(jq -r '.livenessLogPattern // empty' "$PROFILE")
 # Join port + hint for the readiness embed (mirrors /gate join + status). Port
 # falls back to the first game port; hint is the game's connect instructions.
 JOIN_PORT=$(jq -r '.join.port // .ports[0].from' "$PROFILE")
@@ -131,13 +138,27 @@ while true; do
     LIVE=true
     PLAYERS=$(echo "$OUT" | sed 's/^LIVE //' | jq -r '.players // 0' 2>/dev/null)
     [[ "$PLAYERS" =~ ^[0-9]+$ ]] || PLAYERS=0
-  elif [ -n "$PLAYERS_LOG_PATTERN" ]; then
-    # A2S silent — fall back to the game's log heartbeat (last 5 minutes).
-    MATCH=$(docker logs --since 5m "$CONTAINER_NAME" 2>&1 | grep -oE "$PLAYERS_LOG_PATTERN" | tail -1)
-    if [ -n "$MATCH" ]; then
+  elif [ -n "$PLAYERS_LOG_PATTERN" ] || [ -n "$LIVENESS_LOG_PATTERN" ]; then
+    # A2S silent (e.g. crossplay Valheim -> PlayFab) — derive liveness + player
+    # count from the server's own log over the FULL session, NOT a time window.
+    # A player emits a "now N player(s)" line only at the instant they join, so a
+    # windowed scrape reads 0 a few minutes later and idle-kills a connected
+    # player (this idle-killed a friend mid-session). Reading the whole log means
+    # that join line never scrolls out of view, so the count stays correct until
+    # they actually leave.
+    LOGS=$(docker logs "$CONTAINER_NAME" 2>&1)
+    # Liveness: a heartbeat present even at 0 players once the server is joinable.
+    if [ -n "$LIVENESS_LOG_PATTERN" ] && echo "$LOGS" | grep -qE "$LIVENESS_LOG_PATTERN"; then
       LIVE=true
-      PLAYERS=$(echo "$MATCH" | grep -oE '[0-9]+' | tail -1)
-      [[ "$PLAYERS" =~ ^[0-9]+$ ]] || PLAYERS=0
+    fi
+    # Count: the LAST join/leave event's number is the current player count.
+    if [ -n "$PLAYERS_LOG_PATTERN" ]; then
+      MATCH=$(echo "$LOGS" | grep -oE "$PLAYERS_LOG_PATTERN" | tail -1)
+      if [ -n "$MATCH" ]; then
+        LIVE=true
+        PLAYERS=$(echo "$MATCH" | grep -oE '[0-9]+' | tail -1)
+        [[ "$PLAYERS" =~ ^[0-9]+$ ]] || PLAYERS=0
+      fi
     fi
   fi
 

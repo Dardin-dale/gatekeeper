@@ -54,8 +54,10 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     joinCodePattern: profile.join.type === 'address'
       ? (profile.join.codeLogPattern ?? '')
       : profile.join.logPattern,
-    // A2S fallback: log-scraped liveness/player count (see types.ts).
+    // A2S fallback: log-scraped player count (join/leave events) + a separate
+    // "server is up" liveness signal (heartbeat). See types.ts for why they differ.
     playersLogPattern: profile.playersLogPattern ?? '',
+    livenessLogPattern: profile.livenessLogPattern ?? '',
     // Join details for the host's readiness embed, so "🟢 Server Online" renders
     // the same port + hint as /gate join and /gate status (util/join-info).
     join: profile.join.type === 'address'

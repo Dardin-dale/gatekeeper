@@ -40,10 +40,20 @@ export const valheim: GameProfile = {
 
   // ⚠️ With -crossplay (our worlds use it) Valheim switches to PlayFab
   // networking and does NOT answer A2S on 2457 — verified live on the first
-  // GateStack-Valheim boot. Liveness + player count come from the session
-  // heartbeat it writes to its log instead (playersLogPattern). A2S works
-  // only on Steam-only (no -crossplay) servers.
-  playersLogPattern: 'is active with [0-9]+ player|now [0-9]+ player',
+  // GateStack-Valheim boot. Liveness + player count come from the log instead,
+  // and they need DIFFERENT lines (the source of a real idle-shutdown bug that
+  // kicked a mid-session player):
+  //   - COUNT: the join/leave EVENT lines, which carry the live count and are
+  //     proven accurate under crossplay ("Player joined server ... now 1
+  //     player(s)" / "Player connection lost server ... now 0 player(s)").
+  //     The host reads the full log, so the latest event = current count even
+  //     for a player who joined long ago and is sitting quietly.
+  //   - LIVENESS: the recurring session heartbeat ("Session ... is active with
+  //     N player(s)"), which fires even at 0 players the moment the PlayFab
+  //     session registers. NOT used for the count: under crossplay it can be
+  //     PlayFab-blind and report a stale 0, which would idle-kill a live player.
+  playersLogPattern: 'now [0-9]+ player',
+  livenessLogPattern: 'is active with [0-9]+ player',
 
   // In practice players save the server once and reuse it: Steam → View →
   // Game Servers → Favorites with <domain>:2457 remembers the password after
