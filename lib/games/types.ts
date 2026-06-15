@@ -73,6 +73,26 @@ export interface GameProfile {
    */
   livenessLogPattern?: string;
 
+  /**
+   * Optional EVENT-bookkeeping count for games whose log reports joins/leaves as
+   * discrete events carrying a username, not a running count. The monitor counts
+   * net presence = (#playerJoinPattern matches − #playerLeavePattern matches)
+   * over the FULL log. Use when A2S answers but UNDERCOUNTS — Abiotic Factor
+   * answers A2S yet always reports 0 players because clients join over EOS, which
+   * A2S can't see (verified live: A2S_INFO and A2S_PLAYER both 0 with a player
+   * connected). When set, this OVERRIDES the A2S player count; liveness still
+   * comes from A2S (or livenessLogPattern). Both patterns must be set together.
+   *
+   * Caveat: an ungraceful disconnect (crash/timeout) that logs no leave line
+   * leaves the count high — the server then stays up longer but NEVER idle-kills a
+   * connected player (the safe failure direction). Pair with a sane auto-shutdown
+   * window as the cost backstop. The patterns should also be specific enough that
+   * a player can't trip the count by typing the phrase in chat; over-counting only
+   * delays shutdown, so err toward matching.
+   */
+  playerJoinPattern?: string;
+  playerLeavePattern?: string;
+
   /** Default EC2 instance type (overridable via the INSTANCE_TYPE env var). */
   instanceType: string;
   /** Persistent-data EBS volume size in GB. */

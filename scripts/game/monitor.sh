@@ -53,6 +53,11 @@ JOIN_CODE_PATTERN=$(jq -r '.joinCodePattern // empty' "$PROFILE")
 #                          from a heartbeat that can report a stale 0 under crossplay.
 PLAYERS_LOG_PATTERN=$(jq -r '.playersLogPattern // empty' "$PROFILE")
 LIVENESS_LOG_PATTERN=$(jq -r '.livenessLogPattern // empty' "$PROFILE")
+# Event-bookkeeping count (e.g. Abiotic Factor over EOS): when both are set the
+# count is net presence = (#join matches − #leave matches) over the full log,
+# OVERRIDING the A2S count (A2S answers for AF but is EOS-blind, always 0).
+PLAYER_JOIN_PATTERN=$(jq -r '.playerJoinPattern // empty' "$PROFILE")
+PLAYER_LEAVE_PATTERN=$(jq -r '.playerLeavePattern // empty' "$PROFILE")
 # Join port + hint for the readiness embed (mirrors /gate join + status). Port
 # falls back to the first game port; hint is the game's connect instructions.
 JOIN_PORT=$(jq -r '.join.port // .ports[0].from' "$PROFILE")
@@ -160,6 +165,25 @@ while true; do
         [[ "$PLAYERS" =~ ^[0-9]+$ ]] || PLAYERS=0
       fi
     fi
+  fi
+
+  # --- Event-bookkeeping count override (e.g. Abiotic Factor) ---
+  # Some games answer A2S — so the liveness above is correct — but report 0
+  # players because clients join over a relay A2S can't see (AF -> EOS; verified
+  # live: A2S_INFO and A2S_PLAYER both 0 with a player connected). When the
+  # profile defines join/leave EVENT patterns, derive the count from them instead
+  # of A2S: net presence = (#joins − #leaves) over the FULL log. The full-log read
+  # is deliberate — an early join must not scroll off while the player is still
+  # on. Leaves LIVE as A2S set it (a stale join line must not keep a dead server
+  # "live"). Caveat: an ungraceful disconnect logs no leave, so the count can stay
+  # high — the server then stays up longer but never idle-kills a live player.
+  if [ -n "$PLAYER_JOIN_PATTERN" ] && [ -n "$PLAYER_LEAVE_PATTERN" ]; then
+    EVLOGS=$(docker logs "$CONTAINER_NAME" 2>&1)
+    JOINS=$(echo "$EVLOGS" | grep -cE "$PLAYER_JOIN_PATTERN")
+    LEAVES=$(echo "$EVLOGS" | grep -cE "$PLAYER_LEAVE_PATTERN")
+    PLAYERS=$((JOINS - LEAVES))
+    [ "$PLAYERS" -lt 0 ] && PLAYERS=0
+    log "Event count: ${JOINS} joined − ${LEAVES} left = ${PLAYERS}"
   fi
 
   # --- Down-debounce: one missed check while live is UDP noise; two in a row

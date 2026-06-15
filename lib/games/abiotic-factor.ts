@@ -50,6 +50,17 @@ export const abioticFactor: GameProfile = {
   ],
   queryPort: 27015, // Steam A2S query
 
+  // ⚠️ AF answers Steam A2S (so liveness works) but ALWAYS reports 0 players:
+  // clients join over EOS, which the Steam query can't see — verified live, both
+  // A2S_INFO and A2S_PLAYER returned 0 with a player connected. The server does
+  // log join/leave at default ('Display') verbosity, so the count comes from
+  // those events instead (net = joins − leaves over the full log). Verified
+  // verbatim against our own container:
+  //   LogAbiotic: Display: CHAT LOG:  <name> has entered the facility.
+  //   LogAbiotic: Display: CHAT LOG:  <name> has exited the facility.
+  playerJoinPattern: 'has entered the facility',
+  playerLeavePattern: 'has exited the facility',
+
   // Wine + a UE5 game wants more headroom than a native server. Override via INSTANCE_TYPE.
   instanceType: 't3.large',
   dataVolumeSizeGb: 20, // SteamCMD pulls several GB for AF
