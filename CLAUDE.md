@@ -91,6 +91,12 @@ before the announced time and posts T-60/T-10 countdown webhooks. Input times pa
   installed by the host on world start (manifest-tracked).
 - **Runtime source of truth**: SSM under `/gatekeeper/<game-id>/*` (active world, player count,
   webhooks as SecureString, auto-shutdown minutes, per-guild default world).
+- **Cost-guardrail timers** (`auto-shutdown-minutes`, `boot-timeout-minutes`): deploy-time default
+  from the `GameProfile` (`autoShutdownMinutes` / `bootTimeoutMinutes`), overridable at deploy via
+  the `AUTO_SHUTDOWN_MINUTES` / `BOOT_TIMEOUT_MINUTES` env vars, and retunable live (no redeploy)
+  with `npm run cli config set <auto-shutdown|boot-timeout> <min|off>` — the monitor re-reads SSM
+  each cycle. A deploy only re-asserts these when the profile/env default changes, so a CLI override
+  survives ordinary deploys.
 - `/gate start` resolves the per-guild default world → writes `active-world` to SSM → the host start
   script reads it.
 

@@ -33,6 +33,10 @@ npm run cli mods add <file|dir|zip> [name]   # add a downloaded mod (--kind k --
 npm run cli mods import <Ns/Mod[@ver]>       # import from Thunderstore (games with a community)
 npm run cli mods info <name>                 # a mod's metadata + files
 npm run cli mods remove <name>               # remove a mod from the library
+
+npm run cli config show                      # show runtime tunables (idle/boot timers)
+npm run cli config set auto-shutdown <min>   # retune the idle auto-shutdown window live
+npm run cli config set boot-timeout <min>    # retune the boot-timeout safety net live
 ```
 
 - **`backup list`** — backups live at `s3://<backup-bucket>/backups/<game-id>/<timestamp>.tar.gz`
@@ -49,6 +53,14 @@ npm run cli mods remove <name>               # remove a mod from the library
   their `mods` array in `config/<game>.worlds.json`, installed by the host on world start. The full
   model + per-game walkthroughs (Abiotic Factor/Nexus, Valheim/Thunderstore): `docs/mods.md`.
   `mods add` zip handling shells out to `unzip` (install it locally if missing).
+- **`config show` / `config set`** — the two cost-guardrail timers the on-host monitor reads from
+  SSM each cycle: `auto-shutdown` (idle minutes before backup+stop) and `boot-timeout` (minutes to
+  wait for first liveness before stopping a wedged boot). Their deploy-time default is the
+  `GameProfile` (`autoShutdownMinutes` / `bootTimeoutMinutes`), overridable at deploy via the
+  `AUTO_SHUTDOWN_MINUTES` / `BOOT_TIMEOUT_MINUTES` env vars. `config set <key> <min|off>` retunes the
+  SSM param live — no redeploy, no restart; the monitor picks it up within ~one cycle. A subsequent
+  deploy only re-asserts the value when the profile/env default itself changes, so a CLI override
+  survives ordinary deploys. Pass `off` (or `disabled`) to turn a guard off.
 
 ## Local directory layout
 

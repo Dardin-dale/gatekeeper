@@ -87,6 +87,8 @@ export const abioticFactor: GameProfile = {
   // Wine + a UE5 game wants more headroom than a native server. Override via INSTANCE_TYPE.
   instanceType: 't3.large',
   dataVolumeSizeGb: 20, // SteamCMD pulls several GB for AF
+  autoShutdownMinutes: 15, // idle-stop after 15 min with no players (cost control)
+  bootTimeoutMinutes: 45,  // generous: first boot SteamCMD-pulls several GB
 
   join: {
     type: 'address',

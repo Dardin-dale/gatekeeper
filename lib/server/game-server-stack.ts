@@ -574,9 +574,12 @@ EOF`,
             description: "S3 bucket name for game server backups",
         });
 
-        // Auto-shutdown configuration (minutes of idle time before server stops)
-        // Set to "off" or "disabled" to disable auto-shutdown
-        const autoShutdownMinutes = process.env.AUTO_SHUTDOWN_MINUTES || '15';
+        // Auto-shutdown configuration (minutes of idle time before server stops).
+        // Per-game default from the profile; AUTO_SHUTDOWN_MINUTES (.env) overrides
+        // as an escape hatch. Set to "off"/"disabled" to disable. Retunable at
+        // runtime via `cli config set auto-shutdown` (the monitor re-reads SSM).
+        const autoShutdownMinutes =
+            process.env.AUTO_SHUTDOWN_MINUTES || String(ACTIVE_GAME.autoShutdownMinutes ?? 15);
         new StringParameter(this, "AutoShutdownParam", {
             parameterName: `/gatekeeper/${ACTIVE_GAME.id}/auto-shutdown-minutes`,
             stringValue: autoShutdownMinutes,
@@ -587,7 +590,8 @@ EOF`,
         // first boot / SteamCMD failure), the monitor stops the instance after this
         // many minutes so it can't bill indefinitely. Generous default — first boot
         // downloads several GB; later boots reuse the RETAIN'd EBS and are fast.
-        const bootTimeoutMinutes = process.env.BOOT_TIMEOUT_MINUTES || '45';
+        const bootTimeoutMinutes =
+            process.env.BOOT_TIMEOUT_MINUTES || String(ACTIVE_GAME.bootTimeoutMinutes ?? 45);
         new StringParameter(this, "BootTimeoutParam", {
             parameterName: `/gatekeeper/${ACTIVE_GAME.id}/boot-timeout-minutes`,
             stringValue: bootTimeoutMinutes,

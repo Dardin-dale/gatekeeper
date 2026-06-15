@@ -65,6 +65,8 @@ export const valheim: GameProfile = {
 
   instanceType: 't3.medium',
   dataVolumeSizeGb: 12,
+  autoShutdownMinutes: 15, // idle-stop after 15 min with no players (cost control)
+  bootTimeoutMinutes: 45,  // generous: first boot SteamCMD-pulls the server image
 
   // ⚠️ With -crossplay (our worlds use it) Valheim switches to PlayFab
   // networking and does NOT answer A2S on 2457 — verified live on the first

@@ -40,6 +40,8 @@ export const templateGame: GameProfile = {
 
   instanceType: 't3.medium', // TODO size for the game
   dataVolumeSizeGb: 12,
+  autoShutdownMinutes: 15, // idle-stop after N min with no players (cost control); 'off' to disable
+  bootTimeoutMinutes: 45,  // stop a wedged boot after N min so it can't bill forever; 'off' to disable
 
   // address (IP:port) for most games, or { type: 'join-code', logPattern } for crossplay codes.
   join: { type: 'address', port: 0 }, // TODO real join port

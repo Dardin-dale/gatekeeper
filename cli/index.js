@@ -9,6 +9,7 @@ const backup = require('./commands/backup');
 const world = require('./commands/world');
 const mods = require('./commands/mods');
 const discord = require('./commands/discord');
+const config = require('./commands/config');
 const { GAME_ID, STACK_NAME } = require('./lib/context');
 
 function usage() {
@@ -33,6 +34,9 @@ Usage:
   npm run cli mods remove <name>             Remove a mod from the library
 
   npm run cli discord put-token              Seed the bot token to SSM (presence sidecar)
+
+  npm run cli config show                     Show runtime tunables (idle/boot timers)
+  npm run cli config set <key> <min|off>      Retune auto-shutdown | boot-timeout live
 
 Notes:
   - Server start/stop/status are Discord commands: /gate start | stop | status
@@ -67,6 +71,11 @@ async function main() {
 
   if (group === 'discord') {
     if (sub === 'put-token') return discord.putToken();
+  }
+
+  if (group === 'config') {
+    if (sub === 'show' || sub === 'list') return config.show();
+    if (sub === 'set') return config.set(rest[0], rest[1]);
   }
 
   usage();

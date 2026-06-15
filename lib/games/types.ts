@@ -109,6 +109,24 @@ export interface GameProfile {
   dataVolumeSizeGb: number;
 
   /**
+   * Idle auto-shutdown window: minutes of player-idle before the monitor backs
+   * up and stops the instance — the core cost control. A number, or 'off' to
+   * never idle-stop. Seeds the SSM param `/gatekeeper/<game>/auto-shutdown-
+   * minutes` at deploy; the `.env` AUTO_SHUTDOWN_MINUTES overrides it as an
+   * escape hatch. Tunable at runtime via `npm run cli config set auto-shutdown
+   * <min|off>` (the monitor re-reads SSM each cycle, so no restart). Default 15.
+   */
+  autoShutdownMinutes?: number | 'off';
+  /**
+   * Boot-timeout safety net: minutes to wait for first liveness before stopping
+   * a wedged boot so it can't bill indefinitely. A number, or 'off'. Same
+   * precedence as autoShutdownMinutes — profile default, `.env`
+   * BOOT_TIMEOUT_MINUTES overrides, `cli config set boot-timeout` retunes at
+   * runtime. Default 45 (first boot pulls several GB; later boots are fast).
+   */
+  bootTimeoutMinutes?: number | 'off';
+
+  /**
    * How players connect / how the bot reports "how to join". This is the one
    * per-game carve-out: address-based games (A2S/IP) need nothing special;
    * join-code games (e.g. Valheim crossplay) carry an opt-in code fetcher.
