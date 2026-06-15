@@ -111,6 +111,17 @@ PERSONA_NAME=$(jq -r '.persona.characterName // "GATEKeeper"' "$PROFILE")
 PERSONA_AVATAR=$(jq -r '.persona.thumbnailUrl // empty' "$PROFILE")
 PERSONA_FOOTER=$(jq -r '.persona.footer // empty' "$PROFILE")
 
+# Whether a notification category is enabled. Toggled per-game via `/<cmd> notify`
+# (SSM /gatekeeper/<game>/notify/<category>); ENABLED by default when unset. Guard
+# each post with `notify_enabled <category> && post_discord ...` so silencing a
+# category suppresses only its Discord message, never the underlying action.
+notify_enabled() { # $1 = category
+  local v
+  v=$(aws ssm get-parameter --name "/gatekeeper/${GAME_ID}/notify/$1" \
+        --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || true)
+  [ "$v" != "off" ]
+}
+
 post_discord() { # $1 = title, $2 = description, $3 = color (decimal), $4 = optional JSON embed-fields array
   local url; url=$(get_webhook_url) || { log "no webhook configured; skipping Discord post"; return 0; }
   [ -z "$url" ] || [ "$url" = "None" ] && { log "no webhook configured; skipping Discord post"; return 0; }
@@ -242,7 +253,7 @@ while true; do
         + (if $pw   != "" then [{name: "🔑 Password",   value: "||```\n\($pw)\n```||", inline: true}] else [] end)
         + (if $code != "" then [{name: "🎟️ \($codeLabel)", value: "```\n\($code)\n```", inline: true}] else [] end)')
       DESC="${JOIN_HINT:-The server is live — connect with the details below.}"
-      post_discord "🟢 Server Online" "$DESC" 3776160 "$JOIN_FIELDS"
+      notify_enabled online && post_discord "🟢 Server Online" "$DESC" 3776160 "$JOIN_FIELDS"
     fi
   else
     rm -f "$LIVE_STATE_FILE"
@@ -265,7 +276,7 @@ while true; do
       log "Awaiting first liveness: ${BOOTED}s elapsed (boot-timeout ${BOOT_TIMEOUT}m)"
       if [ "$BOOTED" -gt $((BOOT_TIMEOUT * 60)) ]; then
         log "Server never came online after ${BOOT_TIMEOUT}m — stopping (likely a failed boot)"
-        post_discord "⚠️ Server Failed to Start" "The server didn't come online within ${BOOT_TIMEOUT} minutes. Stopping to avoid charges — try \`/gate start\` again (the next boot is faster, the download is cached)." 15158332
+        notify_enabled failed && post_discord "⚠️ Server Failed to Start" "The server didn't come online within ${BOOT_TIMEOUT} minutes. Stopping to avoid charges — try \`/gate start\` again (the next boot is faster, the download is cached)." 15158332
         invalidate_session_params
         aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region "$REGION"
         break
@@ -285,7 +296,7 @@ while true; do
     log "Idle for ${IDLE}s (threshold ${THRESHOLD}s)"
     if [ "$IDLE" -gt "$THRESHOLD" ]; then
       log "Idle threshold exceeded — backing up and shutting down"
-      post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904
+      notify_enabled idle && post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904
       /usr/local/bin/backup-server.sh || log "WARNING: backup failed; stopping anyway (data persists on EBS)"
       invalidate_session_params
       aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region "$REGION"

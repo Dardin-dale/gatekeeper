@@ -10,6 +10,7 @@ import { InteractionType, InteractionResponseType } from "./commands/types";
 import { handleStartCommand } from "./commands/start";
 import { handleStopCommand } from "./commands/stop";
 import { handleBackupCommand } from "./commands/backup";
+import { handleNotifyCommand } from "./commands/notify";
 import { handleStatusCommand } from "./commands/status";
 import { handleJoinCommand } from "./commands/join";
 import { handleModsCommand } from "./commands/mods";
@@ -121,6 +122,11 @@ export async function handler(
           return await handleSetupCommand(body);
         case "help":
           return await handleHelpCommand();
+        case "notify": {
+          // Subcommand group: the action (set|list) is options[0] of the group.
+          const action = subOptions?.[0];
+          return await handleNotifyCommand(action?.name, action?.options);
+        }
       }
 
       // The rest control the EC2 instance and need it to exist.

@@ -32,6 +32,7 @@ export async function handleHelpCommand(): Promise<APIGatewayProxyResult> {
           name: "Setup & Fun",
           value: [
             `\`${slash} setup\` — wire up notifications in this channel`,
+            `\`${slash} notify set|list\` — turn notification types on/off (e.g. quiet backups)`,
             `\`${slash} hail\` — a transmission from ${persona.characterName}`,
             `\`${slash} help\` — show this menu`,
           ].join("\n"),

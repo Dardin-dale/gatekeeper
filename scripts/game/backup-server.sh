@@ -51,6 +51,16 @@ get_webhook_url() {
   aws ssm get-parameter --name "/gatekeeper/${GAME_ID}/discord-webhook/${guild}" --with-decryption \
     --region "$REGION" --query "Parameter.Value" --output text 2>/dev/null
 }
+# Whether a notification category is enabled (SSM /gatekeeper/<game>/notify/<cat>;
+# enabled by default when unset). Toggled per-game via `/<cmd> notify`.
+notify_enabled() { # $1 = category
+  local v
+  # `|| true` inside the substitution: a missing param (the default/unset case) makes
+  # aws exit non-zero, which would trip this script's `set -e` before the test runs.
+  v=$(aws ssm get-parameter --name "/gatekeeper/${GAME_ID}/notify/$1" \
+        --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || true)
+  [ "$v" != "off" ]
+}
 post_discord() { # $1 = title, $2 = description, $3 = color (decimal)
   local url; url=$(get_webhook_url) || { log "no webhook configured; skipping Discord post"; return 0; }
   { [ -z "$url" ] || [ "$url" = "None" ]; } && { log "no webhook configured; skipping Discord post"; return 0; }
@@ -83,4 +93,8 @@ log "Uploading -> $DEST"
 aws s3 cp "$ARCHIVE" "$DEST" --region "$REGION"
 rm -f "$ARCHIVE"
 log "Backup complete: $DEST"
-post_discord "💾 Backup Complete" "World data archived safely — \`${TS}.tar.gz\` (${SIZE}). Everyone's progress is saved." 3776160
+# `if` (not `&&`) so a silenced category's non-zero exit doesn't trip set -e and
+# make this script report a false backup failure to its caller (the monitor).
+if notify_enabled backup; then
+  post_discord "💾 Backup Complete" "World data archived safely — \`${TS}.tar.gz\` (${SIZE}). Everyone's progress is saved." 3776160
+fi

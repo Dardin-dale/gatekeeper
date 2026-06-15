@@ -74,9 +74,26 @@ export const SSM_PARAMS = {
   JOIN_CODE: `${SSM_PREFIX}/join-code`, // per-session lobby code scraped by the host monitor ('none' = absent)
   SERVER_LIVE: `${SSM_PREFIX}/server-live`, // 'true' while the game answers the host monitor's liveness checks
   PREWARM_MINUTES: `${SSM_PREFIX}/prewarm-minutes`, // scheduled openings: start this many minutes before the announced time
+  // Per-category notification toggles: /gatekeeper/<game-id>/notify/<category> = on|off
+  // (read by the host post_discord; absent = on). See lib/lambdas/commands/notify.ts.
+  NOTIFY_PREFIX: `${SSM_PREFIX}/notify`,
   // Per-Discord-server default world: /gatekeeper/<game-id>/discord/<guild-id>/default-world
   GUILD_DEFAULT_WORLD_PREFIX: `${SSM_PREFIX}/discord`,
 };
+
+/** Notification categories the host can post and `/<cmd> notify` can toggle. */
+export const NOTIFY_CATEGORIES = [
+  { key: "online", label: "🟢 Server online / ready" },
+  { key: "idle", label: "💤 Idle-shutdown notice" },
+  { key: "backup", label: "💾 Backup complete" },
+  { key: "failed", label: "⚠️ Failed to start" },
+  { key: "events", label: "☠️ In-game events (deaths, raids)" },
+] as const;
+
+/** SSM path for a notification category's on/off toggle. */
+export function getNotifyParam(category: string): string {
+  return `${SSM_PARAMS.NOTIFY_PREFIX}/${category}`;
+}
 
 /**
  * Get the SSM parameter path for a guild's default world
