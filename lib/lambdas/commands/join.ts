@@ -37,7 +37,7 @@ export async function handleJoinCommand(): Promise<APIGatewayProxyResult> {
     return respond({
       embeds: [personaEmbed({
         title: "🔌 Join the server",
-        description: `The server is not running (status: ${status}). ` +
+        description: `The server is not running (status: ${status}).\n` +
           `Start it with \`${slash} start\` — the join address is posted here when it's ready.`,
       })],
     });

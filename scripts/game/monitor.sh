@@ -343,7 +343,8 @@ while true; do
       log "Awaiting first liveness: ${BOOTED}s elapsed (boot-timeout ${BOOT_TIMEOUT}m)"
       if [ "$BOOTED" -gt $((BOOT_TIMEOUT * 60)) ]; then
         log "Server never came online after ${BOOT_TIMEOUT}m — stopping (likely a failed boot)"
-        notify_enabled failed && post_discord "⚠️ Server Failed to Start" "The server didn't come online within ${BOOT_TIMEOUT} minutes. Stopping to avoid charges — try \`/gate start\` again (the next boot is faster, the download is cached)." 15158332
+        notify_enabled failed && post_discord "⚠️ Server Failed to Start" "The server didn't come online within ${BOOT_TIMEOUT} minutes — stopping to avoid charges.
+Try \`/gate start\` again (the next boot is faster, the download is cached)." 15158332
         invalidate_session_params
         aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region "$REGION"
         break

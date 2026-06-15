@@ -99,5 +99,6 @@ log "Backup complete: $DEST"
 # `if` (not `&&`) so a silenced category's non-zero exit doesn't trip set -e and
 # make this script report a false backup failure to its caller (the monitor).
 if notify_enabled backup; then
-  post_discord "💾 Backup Complete" "World data archived safely — \`${TS}.tar.gz\` (${SIZE}). Everyone's progress is saved." 3776160
+  post_discord "💾 Backup Complete" "World data archived safely — \`${TS}.tar.gz\` (${SIZE}).
+Everyone's progress is saved." 3776160
 fi
