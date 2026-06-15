@@ -11,6 +11,7 @@ import { handleStartCommand } from "./commands/start";
 import { handleStopCommand } from "./commands/stop";
 import { handleBackupCommand } from "./commands/backup";
 import { handleNotifyCommand } from "./commands/notify";
+import { handleConfigCommand } from "./commands/config";
 import { handleStatusCommand } from "./commands/status";
 import { handleJoinCommand } from "./commands/join";
 import { handleModsCommand } from "./commands/mods";
@@ -126,6 +127,12 @@ export async function handler(
           // Subcommand group: the action (set|list) is options[0] of the group.
           const action = subOptions?.[0];
           return await handleNotifyCommand(action?.name, action?.options);
+        }
+        case "config": {
+          // Owner-only spend timers. Subcommand group: action (show|set) is
+          // options[0]; the interaction (body) carries the caller for the gate.
+          const action = subOptions?.[0];
+          return await handleConfigCommand(action?.name, action?.options, body);
         }
       }
 

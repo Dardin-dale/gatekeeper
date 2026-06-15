@@ -45,6 +45,7 @@ jest.mock('../../lib/lambdas/utils/aws-clients', () => {
       ACTIVE_WORLD: '/gatekeeper/abiotic-factor/active-world',
       DISCORD_WEBHOOK: '/gatekeeper/abiotic-factor/discord-webhook',
       AUTO_SHUTDOWN_MINUTES: '/gatekeeper/abiotic-factor/auto-shutdown-minutes',
+      BOOT_TIMEOUT_MINUTES: '/gatekeeper/abiotic-factor/boot-timeout-minutes',
       GUILD_DEFAULT_WORLD_PREFIX: '/gatekeeper/abiotic-factor/discord',
     },
     withRetry: async <T>(operation: () => Promise<T>) => operation(),
@@ -237,6 +238,81 @@ describe('Commands Lambda', () => {
       expect(result.statusCode).toBe(200);
       const body = JSON.parse(result.body);
       expect(body.data.embeds[0].description).toContain('offline');
+    });
+  });
+
+  describe('/gate config Command (owner-gated)', () => {
+    const ownerId = '111111111111111111';
+    const configEvent = (action: any, member: any) => createDiscordEvent({
+      type: 2,
+      member,
+      data: { name: 'gate', options: [{ name: 'config', options: [action] }] },
+    });
+
+    test('denies a non-owner with an ephemeral reject (fail-closed when unset)', async () => {
+      delete process.env.BOT_OWNER_IDS; // no allowlist -> deny everyone
+      const event = configEvent({ name: 'show' }, { user: { id: '999' } });
+      const result = await handler(event, mockContext);
+
+      const body = JSON.parse(result.body);
+      expect(body.data.content).toContain('Only the bot owner');
+      expect(body.data.flags).toBe(64); // ephemeral
+      // Never touched SSM — rejected before any read/write.
+      expect(getMockSsmSend()).not.toHaveBeenCalled();
+    });
+
+    test('denies a user not on the allowlist', async () => {
+      process.env.BOT_OWNER_IDS = ownerId;
+      const event = configEvent({ name: 'show' }, { user: { id: '222' } });
+      const result = await handler(event, mockContext);
+
+      const body = JSON.parse(result.body);
+      expect(body.data.flags).toBe(64);
+      expect(getMockSsmSend()).not.toHaveBeenCalled();
+    });
+
+    test('owner can view the timers (config show)', async () => {
+      process.env.BOT_OWNER_IDS = `000,${ownerId},333`;
+      const event = configEvent({ name: 'show' }, { user: { id: ownerId } });
+      const result = await handler(event, mockContext);
+
+      const body = JSON.parse(result.body);
+      expect(body.data.embeds[0].title).toContain('Cost-Guardrail Timers');
+      expect(body.data.embeds[0].description).toContain('auto-shutdown');
+      expect(body.data.embeds[0].description).toContain('boot-timeout');
+    });
+
+    test('owner can set a timer (writes the SSM param)', async () => {
+      process.env.BOT_OWNER_IDS = ownerId;
+      getMockSsmSend().mockReset();
+      getMockSsmSend().mockResolvedValue({});
+      const event = configEvent(
+        { name: 'set', options: [{ name: 'key', value: 'auto-shutdown' }, { name: 'minutes', value: 10 }] },
+        { user: { id: ownerId } },
+      );
+      const result = await handler(event, mockContext);
+
+      const put = getMockSsmSend().mock.calls.find(
+        (c: any) => c[0]?.input?.Name?.includes('auto-shutdown-minutes'),
+      );
+      expect(put).toBeDefined();
+      expect(put[0].input.Value).toBe('10');
+      expect(JSON.parse(result.body).data.embeds[0].title).toContain('Timer Updated');
+    });
+
+    test('owner setting an invalid value is rejected without writing', async () => {
+      process.env.BOT_OWNER_IDS = ownerId;
+      getMockSsmSend().mockReset();
+      getMockSsmSend().mockResolvedValue({});
+      const event = configEvent(
+        { name: 'set', options: [{ name: 'key', value: 'auto-shutdown' }, { name: 'minutes', value: 0 }] },
+        { user: { id: ownerId } },
+      );
+      const result = await handler(event, mockContext);
+
+      expect(JSON.parse(result.body).data.embeds[0].title).toContain('Invalid');
+      const put = getMockSsmSend().mock.calls.find((c: any) => c[0]?.constructor?.name === 'PutParameterCommand');
+      expect(put).toBeUndefined();
     });
   });
 

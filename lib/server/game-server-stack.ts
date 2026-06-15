@@ -857,6 +857,9 @@ EOF`,
         // Input timezone for `/gate schedule set when:` — display uses Discord
         // native timestamps, so this only governs how typed times are read.
         commandsFunction.addEnvironment("SCHEDULE_TZ", process.env.SCHEDULE_TZ || "America/Los_Angeles");
+        // Owner allowlist for spend-affecting commands (/gate config). Comma-
+        // separated Discord user ids from .env; empty = fail closed (deny all).
+        commandsFunction.addEnvironment("BOT_OWNER_IDS", process.env.BOT_OWNER_IDS || "");
 
         commandsFunction.addToRolePolicy(new PolicyStatement({
             actions: [
