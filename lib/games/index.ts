@@ -39,6 +39,7 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
   return {
     id: profile.id,
     displayName: profile.displayName, // presence sidecar's "Playing <name>"
+    commandName: profile.commandName, // host webhook copy: `/<cmd> start`, `/<cmd> stop`
     image: profile.container.image,
     containerName: profile.container.name,
     staticEnv: profile.container.staticEnv,

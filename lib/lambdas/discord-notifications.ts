@@ -1,6 +1,6 @@
 import { EventBridgeEvent, Context } from 'aws-lambda';
 import { SSMClient, GetParameterCommand, PutParameterCommand } from '@aws-sdk/client-ssm';
-import { persona, personaEmbed, slash } from './commands/util/persona';
+import { persona, personaEmbed, personaAvatarUrl, slash } from './commands/util/persona';
 import { ACTIVE_GAME } from '../games';
 
 // Create AWS clients
@@ -121,13 +121,15 @@ export async function handler(
 function handleEC2StoppedEvent(detail: any): any {
   const time = detail.time ? new Date(detail.time) : new Date();
   return {
-    // Post as the persona in full (e.g. Dr. Derek Manse) with his hologram avatar.
+    // Post as the persona: the bot's app icon is the avatar, the character art
+    // rides inside the embed as its thumbnail (matches the host webhook posts).
     username: persona.characterName,
-    ...(persona.thumbnailUrl ? { avatar_url: persona.thumbnailUrl } : {}),
+    ...(personaAvatarUrl ? { avatar_url: personaAvatarUrl } : {}),
     embeds: [
       personaEmbed({
         // Webhook identity above already names the character; no byline repeat.
         byline: false,
+        withThumbnail: true,
         title: '🛑 Server Offline',
         description: `${persona.lines?.offline ?? 'The server has shut down completely.'}\n` +
           `Use \`${slash} start\` when you want to play again.`,

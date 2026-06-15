@@ -38,6 +38,8 @@ INSTANCE_ID=$(imds instance-id)
 [ -z "$REGION" ] && { log "ERROR: no region from metadata"; exit 1; }
 
 GAME_ID=$(jq -r '.id' "$PROFILE")
+# The game's slash command (gate/munin) for webhook copy — `/gate`, `/munin`.
+SLASH_CMD="/$(jq -r '.commandName // "gate"' "$PROFILE")"
 QUERY_PORT=$(jq -r '.queryPort' "$PROFILE")
 GAME_PORT=$(jq -r '.ports[0].from' "$PROFILE")
 CONTAINER_NAME=$(jq -r '.containerName' "$PROFILE")
@@ -317,6 +319,16 @@ while true; do
         + (if $pw   != "" then [{name: "🔑 Password",   value: "||```\n\($pw)\n```||", inline: true}] else [] end)
         + (if $code != "" then [{name: "🎟️ \($codeLabel)", value: "```\n\($code)\n```", inline: true}] else [] end)')
       DESC="${JOIN_HINT:-The server is live — connect with the details below.}"
+      # Surface the idle auto-shutoff so players know the box turns itself off
+      # (same window the idle path below enforces; mirrors /<cmd> status).
+      ASD=$(aws ssm get-parameter --name "$AUTO_SHUTDOWN_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "20")
+      if [ "$ASD" = "off" ] || [ "$ASD" = "disabled" ]; then
+        DESC="${DESC}
+💤 Auto-shutdown is off — remember to \`${SLASH_CMD} stop\` when you're done."
+      else
+        DESC="${DESC}
+💤 Shuts down automatically after ${ASD} min idle."
+      fi
       notify_enabled online && post_discord "🟢 Server Online" "$DESC" 3776160 "$JOIN_FIELDS"
     fi
   else
@@ -344,7 +356,7 @@ while true; do
       if [ "$BOOTED" -gt $((BOOT_TIMEOUT * 60)) ]; then
         log "Server never came online after ${BOOT_TIMEOUT}m — stopping (likely a failed boot)"
         notify_enabled failed && post_discord "⚠️ Server Failed to Start" "The server didn't come online within ${BOOT_TIMEOUT} minutes — stopping to avoid charges.
-Try \`/gate start\` again (the next boot is faster, the download is cached)." 15158332
+Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cached)." 15158332
         invalidate_session_params
         aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region "$REGION"
         break

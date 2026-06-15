@@ -40,6 +40,14 @@ export function personaFooter(suffix: string = persona.footer): string {
 }
 
 /**
+ * The webhook avatar URL: the bot's Discord app icon (`iconUrl`), falling back
+ * to the character art when a profile hasn't set an app icon. Mirrors the host
+ * posts (monitor.sh / backup-server.sh) so lambda and host webhooks share one
+ * identity — the bot's face as the avatar, character art inside the embed.
+ */
+export const personaAvatarUrl: string | undefined = persona.iconUrl ?? persona.thumbnailUrl;
+
+/**
  * The character byline for embeds + webhook posts, so every message reads as
  * coming from the persona in full (e.g. "Dr. Derek Manse" for Abiotic Factor),
  * matching how he's credited in-game. Includes his hologram as the icon when set.

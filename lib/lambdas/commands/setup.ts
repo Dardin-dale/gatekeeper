@@ -9,7 +9,7 @@ import {
   SSM_PARAMS,
 } from "../utils/aws-clients";
 import { InteractionResponseType } from "./types";
-import { persona, personaEmbed, slash } from "./util/persona";
+import { persona, personaEmbed, personaAvatarUrl, slash } from "./util/persona";
 
 // NOTE: all work happens INLINE before returning. Lambda freezes the execution
 // environment the moment the handler returns, so a fire-and-forget deferred
@@ -71,7 +71,7 @@ export async function handleSetupCommand(interaction: any): Promise<APIGatewayPr
               body: JSON.stringify({
                 content: '✅ Webhook is already configured and working!',
                 username: persona.characterName,
-                ...(persona.thumbnailUrl ? { avatar_url: persona.thumbnailUrl } : {}),
+                ...(personaAvatarUrl ? { avatar_url: personaAvatarUrl } : {}),
               }),
             });
             if (testResponse.ok) {

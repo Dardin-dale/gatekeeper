@@ -2,7 +2,7 @@ import { EC2Client, StartInstancesCommand } from '@aws-sdk/client-ec2';
 import { GetParameterCommand, PutParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { ACTIVE_GAME } from '../games';
 import { WorldConfig } from './utils/world-config';
-import { persona, pickLine } from './commands/util/persona';
+import { persona, personaAvatarUrl, pickLine } from './commands/util/persona';
 
 /**
  * Scheduled-openings Lambda (Phase 11) — the EventBridge Scheduler target.
@@ -70,7 +70,7 @@ export async function handler(event: ScheduleFireEvent): Promise<void> {
     );
     const payload = {
       username: persona.characterName,
-      ...(persona.thumbnailUrl ? { avatar_url: persona.thumbnailUrl } : {}),
+      ...(personaAvatarUrl ? { avatar_url: personaAvatarUrl } : {}),
       embeds: [{
         title: '📅 Scheduled Opening',
         description:
