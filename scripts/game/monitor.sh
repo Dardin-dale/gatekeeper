@@ -321,7 +321,7 @@ while true; do
       DESC="${JOIN_HINT:-The server is live — connect with the details below.}"
       # Surface the idle auto-shutoff so players know the box turns itself off
       # (same window the idle path below enforces; mirrors /<cmd> status).
-      ASD=$(aws ssm get-parameter --name "$AUTO_SHUTDOWN_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "20")
+      ASD=$(aws ssm get-parameter --name "$AUTO_SHUTDOWN_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "15")
       if [ "$ASD" = "off" ] || [ "$ASD" = "disabled" ]; then
         DESC="${DESC}
 💤 Auto-shutdown is off — remember to \`${SLASH_CMD} stop\` when you're done."
@@ -366,7 +366,7 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
 
   # --- Idle tracking / auto-shutdown (only after the server has been live once,
   #     so a slow first boot under Wine+SteamCMD is never mistaken for idle) ---
-  AUTO_SHUTDOWN=$(aws ssm get-parameter --name "$AUTO_SHUTDOWN_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "20")
+  AUTO_SHUTDOWN=$(aws ssm get-parameter --name "$AUTO_SHUTDOWN_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "15")
   if [ "$PLAYERS" -gt 0 ]; then
     echo "$NOW" > "$ACTIVITY_FILE"
   elif [ -f "$SEEN_LIVE_FLAG" ] && [ "$AUTO_SHUTDOWN" != "off" ] && [ "$AUTO_SHUTDOWN" != "disabled" ]; then
