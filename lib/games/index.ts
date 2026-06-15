@@ -62,6 +62,8 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     // the A2S count when set, for games A2S answers but undercounts. See types.ts.
     playerJoinPattern: profile.playerJoinPattern ?? '',
     playerLeavePattern: profile.playerLeavePattern ?? '',
+    // Flavor events the host announces to Discord (gated by the `events` toggle).
+    events: profile.events ?? [],
     // Join details for the host's readiness embed, so "🟢 Server Online" renders
     // the same port + hint as /gate join and /gate status (util/join-info).
     join: profile.join.type === 'address'
@@ -80,6 +82,7 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
       characterName: profile.persona.characterName,
       thumbnailUrl: profile.persona.thumbnailUrl ?? '',
       footer: profile.persona.footer,
+      color: profile.persona.color, // event embeds default to the persona accent
     },
   };
 }

@@ -61,6 +61,25 @@ export const abioticFactor: GameProfile = {
   playerJoinPattern: 'has entered the facility',
   playerLeavePattern: 'has exited the facility',
 
+  // Flavor posts (gated by the `events` notify toggle). Join/leave carry the
+  // name (the CHAT LOG line names the player). Deaths are deliberately omitted:
+  // AF prints ~46 distinct death flavor strings with no common substring and no
+  // confirmed stdout format, so there's nothing stable to scrape.
+  events: [
+    {
+      id: 'join',
+      pattern: 'has entered the facility',
+      nameSed: 's/.*CHAT LOG: +(.+) has entered the facility.*/\\1/',
+      title: '👋 {name} entered the facility',
+    },
+    {
+      id: 'leave',
+      pattern: 'has exited the facility',
+      nameSed: 's/.*CHAT LOG: +(.+) has exited the facility.*/\\1/',
+      title: '🚪 {name} left the facility',
+    },
+  ],
+
   // Wine + a UE5 game wants more headroom than a native server. Override via INSTANCE_TYPE.
   instanceType: 't3.large',
   dataVolumeSizeGb: 20, // SteamCMD pulls several GB for AF

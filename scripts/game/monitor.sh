@@ -58,6 +58,14 @@ LIVENESS_LOG_PATTERN=$(jq -r '.livenessLogPattern // empty' "$PROFILE")
 # OVERRIDING the A2S count (A2S answers for AF but is EOS-blind, always 0).
 PLAYER_JOIN_PATTERN=$(jq -r '.playerJoinPattern // empty' "$PROFILE")
 PLAYER_LEAVE_PATTERN=$(jq -r '.playerLeavePattern // empty' "$PROFILE")
+# Flavor events to announce to Discord (deaths, raids, joins…): a JSON array of
+# {id,pattern,title,body?,nameSed?,color?}. Scraped each cycle, deduped, gated by
+# the `events` notify toggle. See scan_events() + GameProfile.events.
+EVENTS_JSON=$(jq -c '.events // []' "$PROFILE")
+EVENT_COUNT=$(echo "$EVENTS_JSON" | jq 'length')
+# Log window scanned for events each cycle. Larger than the slow cadence (120s)
+# so nothing is missed between cycles; dedup makes the overlap a no-op.
+EVENT_WINDOW="300s"
 # Join port + hint for the readiness embed (mirrors /gate join + status). Port
 # falls back to the first game port; hint is the game's connect instructions.
 JOIN_PORT=$(jq -r '.join.port // .ports[0].from' "$PROFILE")
@@ -110,6 +118,7 @@ get_webhook_url() {
 PERSONA_NAME=$(jq -r '.persona.characterName // "GATEKeeper"' "$PROFILE")
 PERSONA_AVATAR=$(jq -r '.persona.thumbnailUrl // empty' "$PROFILE")
 PERSONA_FOOTER=$(jq -r '.persona.footer // empty' "$PROFILE")
+PERSONA_COLOR=$(jq -r '.persona.color // 3776160' "$PROFILE") # default event embed color
 
 # Whether a notification category is enabled. Toggled per-game via `/<cmd> notify`
 # (SSM /gatekeeper/<game>/notify/<category>); ENABLED by default when unset. Guard
@@ -130,12 +139,51 @@ post_discord() { # $1 = title, $2 = description, $3 = color (decimal), $4 = opti
   payload=$(jq -n --arg name "$PERSONA_NAME" --arg avatar "$PERSONA_AVATAR" --arg footer "$PERSONA_FOOTER" \
     --arg title "$1" --arg desc "$2" --argjson color "$3" --argjson fields "${4:-[]}" \
     '{username: $name, embeds: [{title: $title, description: $desc, color: $color}]}
+     | if $desc == "" then .embeds[0] |= del(.description) else . end
      | if $footer != "" then .embeds[0].footer = {text: $footer} else . end
      | if ($fields | length) > 0 then .embeds[0].fields = $fields else . end
      | if $avatar != "" then .avatar_url = $avatar else . end')
   curl -s -m 10 -H "Content-Type: application/json" -X POST "$url" -d "$payload" \
     > /dev/null 2>&1 || log "WARNING: Discord post failed"
 }
+
+# Dedup key for an event line: collapse the lloesche/Valheim "Console: [Info :
+# Unity Log] <ts>:" mirror (each game line is logged twice, raw + console) so the
+# two copies hash identically and we post once. No-op for games without it.
+declare -A SEEN_EVENTS
+event_key() { echo "$1" | sed -E 's/Console: \[Info : Unity Log\] [0-9/:. ]*//'; }
+
+# Scan the recent log for each profile event and post NEW matches (deduped by
+# event_key). $1="seed" marks current matches seen WITHOUT posting — called once
+# at startup so a monitor (re)start doesn't replay the whole backlog. Edge-
+# triggered: a short --since window (the count is the level-triggered one).
+scan_events() { # $1 = mode ('seed' to suppress posts)
+  [ "${EVENT_COUNT:-0}" -eq 0 ] && return 0
+  local mode="$1" i pattern title body nameSed color line key name t b
+  for i in $(seq 0 $((EVENT_COUNT - 1))); do
+    pattern=$(echo "$EVENTS_JSON" | jq -r ".[$i].pattern")
+    title=$(echo "$EVENTS_JSON" | jq -r ".[$i].title")
+    body=$(echo "$EVENTS_JSON" | jq -r ".[$i].body // \"\"")
+    nameSed=$(echo "$EVENTS_JSON" | jq -r ".[$i].nameSed // empty")
+    color=$(echo "$EVENTS_JSON" | jq -r ".[$i].color // empty")
+    [ -z "$color" ] && color="$PERSONA_COLOR"
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      key=$(event_key "$line")
+      [ -n "${SEEN_EVENTS[$key]:-}" ] && continue
+      SEEN_EVENTS[$key]=1
+      [ "$mode" = "seed" ] && continue
+      name=""
+      [ -n "$nameSed" ] && name=$(echo "$line" | sed -nE "${nameSed}p")
+      t=${title//\{name\}/$name}; b=${body//\{name\}/$name}
+      notify_enabled events && post_discord "$t" "$b" "$color"
+    done < <(docker logs --since "${EVENT_WINDOW:-300s}" "$CONTAINER_NAME" 2>&1 | grep -aE "$pattern")
+  done
+}
+
+# Seed once: mark everything already in the log as seen so a monitor (re)start
+# mid-session doesn't replay the backlog of joins/deaths/raids as fresh posts.
+scan_events seed
 
 while true; do
   NOW=$(date +%s)
@@ -265,6 +313,9 @@ while true; do
   aws ssm put-parameter --name "$PLAYER_COUNT_PARAM" --type String --value "$PLAYERS" --overwrite --region "$REGION" > /dev/null 2>&1
   aws cloudwatch put-metric-data --namespace "$NAMESPACE" --metric-name PlayerCount \
     --value "$PLAYERS" --unit Count --region "$REGION" > /dev/null 2>&1
+
+  # --- Flavor events -> Discord (deaths, raids, joins; deduped, gated by toggle) ---
+  scan_events
 
   # --- Boot-timeout safety net: if the server NEVER answers A2S (e.g. a wedged
   #     first boot / SteamCMD failure loop), stop the box so it can't bill forever.

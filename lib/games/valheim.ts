@@ -55,6 +55,37 @@ export const valheim: GameProfile = {
   playersLogPattern: 'now [0-9]+ player',
   livenessLogPattern: 'is active with [0-9]+ player',
 
+  // Flavor posts (gated by the `events` notify toggle). Munin "remembers every
+  // death" — now he actually does. Deaths carry the name (ZDOID 0:0 = death/
+  // unload, so an occasional logoff reads as a death — on-brand for Munin);
+  // join/leave don't (Valheim's join line names the server, not the player).
+  events: [
+    {
+      id: 'death',
+      pattern: 'Got character ZDOID from .+ : 0:0',
+      nameSed: 's/.*Got character ZDOID from (.+) : 0:0.*/\\1/',
+      title: '☠️ {name} has fallen',
+      body: 'Another name for the saga. I remember them all — the deaths most of all.',
+    },
+    {
+      id: 'raid',
+      // "... Random event set:army_theelder" — start of a raid/world event.
+      pattern: 'Random event set:[a-z_]+',
+      title: '⚔️ A raid descends on the hall!',
+      body: 'The wilds stir against you. Steel yourselves and defend what you have built.',
+    },
+    {
+      id: 'join',
+      pattern: 'Player joined server .* now [0-9]+ player',
+      title: '🛡️ A viking enters the hall',
+    },
+    {
+      id: 'leave',
+      pattern: 'Player connection lost server .* now [0-9]+ player',
+      title: '🚪 A viking departs the hall',
+    },
+  ],
+
   // In practice players save the server once and reuse it: Steam → View →
   // Game Servers → Favorites with <domain>:2457 remembers the password after
   // the first join — the derived domain makes that favorite stable.

@@ -93,6 +93,16 @@ export interface GameProfile {
   playerJoinPattern?: string;
   playerLeavePattern?: string;
 
+  /**
+   * Optional flavor: in-game happenings worth announcing to Discord (player
+   * deaths, raids, joins/leaves…). The on-host monitor scrapes container logs
+   * each cycle, posts a persona embed per NEW match (deduped), and gates them all
+   * behind the `events` notification toggle (`/<cmd> notify`). Edge-triggered —
+   * the mirror of the player count: a short time window + dedup, not the full
+   * log. Up to ~one monitor cycle (≈2 min) of delay; flavor, not telemetry.
+   */
+  events?: GameEvent[];
+
   /** Default EC2 instance type (overridable via the INSTANCE_TYPE env var). */
   instanceType: string;
   /** Persistent-data EBS volume size in GB. */
@@ -114,6 +124,36 @@ export interface GameProfile {
   mods?: ModsSpec;
 
   persona: Persona;
+}
+
+/**
+ * An in-game happening the host announces to Discord (see GameProfile.events).
+ * Every field is JSON-serializable (it rides game-profile.json to the host).
+ */
+export interface GameEvent {
+  /**
+   * Stable id, also the dedup namespace. Purely informational on the host today
+   * (all events share the one `events` toggle), but keep it unique per game.
+   */
+  id: string;
+  /** ERE matched per container-log line (grep -E) to detect the event. */
+  pattern: string;
+  /**
+   * Embed title for the post. `{name}` is replaced with the value nameSed
+   * extracts (or '' when nameSed is unset / matches nothing).
+   */
+  title: string;
+  /** Optional embed body; `{name}` substituted too. Omit for a title-only post. */
+  body?: string;
+  /**
+   * Optional `sed -E` substitution applied (with a trailing `p`) to a matched
+   * line to produce the name for `{name}` — a capture-group expression like
+   * `s/.*ZDOID from (.+) : 0:0.*` + backref. Omit when the line carries no usable
+   * name (the title then stays static). See valheim.ts / abiotic-factor.ts.
+   */
+  nameSed?: string;
+  /** Embed accent color (decimal). Defaults to the persona color on the host. */
+  color?: number;
 }
 
 /**
