@@ -3,7 +3,7 @@ import { GetParameterCommand, PutParameterCommand } from "@aws-sdk/client-ssm";
 import {
   ssmClient,
   withRetry,
-  NOTIFY_CATEGORIES,
+  notifyCategories,
   getNotifyParam,
 } from "../utils/aws-clients";
 import { InteractionResponseType } from "./types";
@@ -43,10 +43,11 @@ async function getState(category: string): Promise<boolean> {
  */
 export async function handleNotifyCommand(action?: string, options?: any[]): Promise<APIGatewayProxyResult> {
   try {
+    const categories = notifyCategories();
     if (action === "set") {
       const category = options?.find((o: any) => o.name === "category")?.value as string | undefined;
       const state = options?.find((o: any) => o.name === "state")?.value as string | undefined;
-      const cat = NOTIFY_CATEGORIES.find((c) => c.key === category);
+      const cat = categories.find((c) => c.key === category);
       if (!cat || (state !== "on" && state !== "off")) {
         return embed("❌ Invalid Setting", `Pick a category and \`on\`/\`off\`. See \`${slash} notify list\`.`, 0xff0000);
       }
@@ -66,7 +67,7 @@ export async function handleNotifyCommand(action?: string, options?: any[]): Pro
 
     // list (default)
     const lines = await Promise.all(
-      NOTIFY_CATEGORIES.map(async (c) => `${(await getState(c.key)) ? "🔔" : "🔕"} \`${c.key}\` — ${c.label}`),
+      categories.map(async (c) => `${(await getState(c.key)) ? "🔔" : "🔕"} \`${c.key}\` — ${c.label}`),
     );
     return embed(
       "🔔 Notification Settings",

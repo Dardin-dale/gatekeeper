@@ -154,6 +154,18 @@ export interface GameEvent {
   nameSed?: string;
   /** Embed accent color (decimal). Defaults to the persona color on the host. */
   color?: number;
+  /**
+   * Notify toggle group this event belongs to, so several entries can share one
+   * `/<cmd> notify` switch — e.g. every Valheim raid variant uses category 'raid'.
+   * Defaults to `id`. The host gates the post on `notify_enabled <category>`.
+   */
+  category?: string;
+  /**
+   * Friendly label for the category in `/<cmd> notify list` / the command's
+   * choices (e.g. 'Raids', 'Deaths'). Only needs to be set on ONE event per
+   * category; defaults to the category key.
+   */
+  label?: string;
 }
 
 /**

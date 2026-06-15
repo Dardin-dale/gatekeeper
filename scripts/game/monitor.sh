@@ -159,7 +159,7 @@ event_key() { echo "$1" | sed -E 's/Console: \[Info : Unity Log\] [0-9/:. ]*//';
 # triggered: a short --since window (the count is the level-triggered one).
 scan_events() { # $1 = mode ('seed' to suppress posts)
   [ "${EVENT_COUNT:-0}" -eq 0 ] && return 0
-  local mode="$1" i pattern title body nameSed color line key name t b
+  local mode="$1" i pattern title body nameSed color category line key name t b
   for i in $(seq 0 $((EVENT_COUNT - 1))); do
     pattern=$(echo "$EVENTS_JSON" | jq -r ".[$i].pattern")
     title=$(echo "$EVENTS_JSON" | jq -r ".[$i].title")
@@ -167,6 +167,9 @@ scan_events() { # $1 = mode ('seed' to suppress posts)
     nameSed=$(echo "$EVENTS_JSON" | jq -r ".[$i].nameSed // empty")
     color=$(echo "$EVENTS_JSON" | jq -r ".[$i].color // empty")
     [ -z "$color" ] && color="$PERSONA_COLOR"
+    # Each event's notify category (a group of entries can share one, e.g. raids);
+    # defaults to the event id. Toggled via `/<cmd> notify set <category> off`.
+    category=$(echo "$EVENTS_JSON" | jq -r ".[$i] | .category // .id")
     while IFS= read -r line; do
       [ -z "$line" ] && continue
       key=$(event_key "$line")
@@ -176,7 +179,7 @@ scan_events() { # $1 = mode ('seed' to suppress posts)
       name=""
       [ -n "$nameSed" ] && name=$(echo "$line" | sed -nE "${nameSed}p")
       t=${title//\{name\}/$name}; b=${body//\{name\}/$name}
-      notify_enabled events && post_discord "$t" "$b" "$color"
+      notify_enabled "$category" && post_discord "$t" "$b" "$color"
     done < <(docker logs --since "${EVENT_WINDOW:-300s}" "$CONTAINER_NAME" 2>&1 | grep -aE "$pattern")
   done
 }

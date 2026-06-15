@@ -1,4 +1,32 @@
-import { GameProfile } from './types';
+import { GameProfile, GameEvent } from './types';
+
+// Valheim raid/world-event lines are `Random event set:<id>`. Each id gets a
+// Munin-voiced banner (the game already shows its own banner, so this is flavor).
+// All share the one 'raid' notify category. event_id -> Munin line; `blobs` has
+// no in-game banner and is omitted; `bats` is medium-confidence but harmless if
+// the id never appears. (Mapping verified against the Valheim event list.)
+const valheimRaids: GameEvent[] = (
+  [
+    ['army_eikthyr', 'Eikthyr rouses the forest — its beasts come for you. I have seen this hunt before.'],
+    ['army_theelder', 'The forest is moving. Hold fast; I will remember who stood their ground.'],
+    ['army_bonemass', 'A foul reek rises from the swamp. Something old has woken — and it remembers you.'],
+    ['army_moder', 'A cold wind falls from the mountains. Moder’s brood has not forgotten.'],
+    ['army_goblin', 'The horde descends. Hold the wall — this is how sagas are made.'],
+    ['army_seekers', 'They sought you out. The Mistlands do not forgive trespass.'],
+    ['army_gjall', 'A Gjall drifts from the mist, heavy with menace. Look up.'],
+    ['foresttrolls', 'The ground shakes — trolls come through the trees. Mind your roof.'],
+    ['wolves', 'You are being hunted. The pack has your scent now.'],
+    ['surtlings', 'Sulfur taints the air. The embers are rising.'],
+    ['skeletons', 'The dead walk tonight. They remember little; I remember all.'],
+    ['bats', 'You stirred the cauldron — wings gather in the dark.'],
+  ] as const
+).map(([id, line]) => ({
+  id: `raid-${id}`,
+  category: 'raid',
+  label: 'Raids',
+  pattern: `Random event set:${id}`,
+  title: `⚔️ ${line}`,
+}));
 
 /**
  * Valheim — the GATEKeeper port of huginbot. Personified as MUNIN (memory, the
@@ -55,32 +83,35 @@ export const valheim: GameProfile = {
   playersLogPattern: 'now [0-9]+ player',
   livenessLogPattern: 'is active with [0-9]+ player',
 
-  // Flavor posts (gated by the `events` notify toggle). Munin "remembers every
-  // death" — now he actually does. Deaths carry the name (ZDOID 0:0 = death/
-  // unload, so an occasional logoff reads as a death — on-brand for Munin);
-  // join/leave don't (Valheim's join line names the server, not the player).
+  // Flavor posts, each gated by its own `/<cmd> notify` category (deaths, raids,
+  // joins, leaves — toggle independently). Munin "remembers every death" — now he
+  // actually does. Deaths carry the name (ZDOID 0:0 = death/unload, so an
+  // occasional logoff reads as a death — on-brand for Munin); join/leave don't
+  // (Valheim's join line names the server, not the player). Raids are detected by
+  // the `Random event set:<id>` line and spoken in Munin's voice (the in-game
+  // banner already shows, so this is colour, not information).
   events: [
     {
       id: 'death',
+      category: 'death',
+      label: 'Deaths',
       pattern: 'Got character ZDOID from .+ : 0:0',
       nameSed: 's/.*Got character ZDOID from (.+) : 0:0.*/\\1/',
       title: '☠️ {name} has fallen',
       body: 'Another name for the saga. I remember them all — the deaths most of all.',
     },
-    {
-      id: 'raid',
-      // "... Random event set:army_theelder" — start of a raid/world event.
-      pattern: 'Random event set:[a-z_]+',
-      title: '⚔️ A raid descends on the hall!',
-      body: 'The wilds stir against you. Steel yourselves and defend what you have built.',
-    },
+    ...valheimRaids,
     {
       id: 'join',
+      category: 'join',
+      label: 'Joins',
       pattern: 'Player joined server .* now [0-9]+ player',
       title: '🛡️ A viking enters the hall',
     },
     {
       id: 'leave',
+      category: 'leave',
+      label: 'Leaves',
       pattern: 'Player connection lost server .* now [0-9]+ player',
       title: '🚪 A viking departs the hall',
     },

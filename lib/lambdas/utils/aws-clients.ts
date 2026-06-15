@@ -81,14 +81,29 @@ export const SSM_PARAMS = {
   GUILD_DEFAULT_WORLD_PREFIX: `${SSM_PREFIX}/discord`,
 };
 
-/** Notification categories the host can post and `/<cmd> notify` can toggle. */
-export const NOTIFY_CATEGORIES = [
+/** Fixed lifecycle notification categories every game has. */
+export const SYSTEM_NOTIFY_CATEGORIES = [
   { key: "online", label: "🟢 Server online / ready" },
   { key: "idle", label: "💤 Idle-shutdown notice" },
   { key: "backup", label: "💾 Backup complete" },
   { key: "failed", label: "⚠️ Failed to start" },
-  { key: "events", label: "☠️ In-game events (deaths, raids)" },
 ] as const;
+
+/**
+ * Every notification category for the active game: the system ones plus one per
+ * distinct event category the profile defines (e.g. deaths, raids, joins). This
+ * is the source of truth for both `/<cmd> notify` validation/listing and the
+ * registered command's choices.
+ */
+export function notifyCategories(): { key: string; label: string }[] {
+  const seen = new Map<string, string>();
+  for (const { key, label } of SYSTEM_NOTIFY_CATEGORIES) seen.set(key, label);
+  for (const e of ACTIVE_GAME.events ?? []) {
+    const cat = e.category ?? e.id;
+    if (!seen.has(cat)) seen.set(cat, e.label ?? cat);
+  }
+  return [...seen].map(([key, label]) => ({ key, label }));
+}
 
 /** SSM path for a notification category's on/off toggle. */
 export function getNotifyParam(category: string): string {

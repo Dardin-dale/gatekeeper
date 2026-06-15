@@ -68,12 +68,16 @@ export const abioticFactor: GameProfile = {
   events: [
     {
       id: 'join',
+      category: 'join',
+      label: 'Joins',
       pattern: 'has entered the facility',
       nameSed: 's/.*CHAT LOG: +(.+) has entered the facility.*/\\1/',
       title: '👋 {name} entered the facility',
     },
     {
       id: 'leave',
+      category: 'leave',
+      label: 'Leaves',
       pattern: 'has exited the facility',
       nameSed: 's/.*CHAT LOG: +(.+) has exited the facility.*/\\1/',
       title: '🚪 {name} left the facility',
