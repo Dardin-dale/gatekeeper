@@ -164,7 +164,10 @@ event_key() { echo "$1" | sed -E 's/Console: \[Info : Unity Log\] [0-9/:. ]*//';
 # triggered: a short --since window (the count is the level-triggered one).
 scan_events() { # $1 = mode ('seed' to suppress posts)
   [ "${EVENT_COUNT:-0}" -eq 0 ] && return 0
-  local mode="$1" i id pattern title body nameSed color category dedupByName line key name t b
+  local mode="$1" i id pattern title body nameSed color category dedupByName line key name t b logs
+  # Read the window ONCE per cycle, then grep it per event (not one docker-logs
+  # call per event — that was 16x for Valheim every cycle).
+  logs=$(docker logs --since "${EVENT_WINDOW:-300s}" "$CONTAINER_NAME" 2>&1)
   for i in $(seq 0 $((EVENT_COUNT - 1))); do
     id=$(echo "$EVENTS_JSON" | jq -r ".[$i].id")
     pattern=$(echo "$EVENTS_JSON" | jq -r ".[$i].pattern")
@@ -190,7 +193,7 @@ scan_events() { # $1 = mode ('seed' to suppress posts)
       [ "$mode" = "seed" ] && continue
       t=${title//\{name\}/$name}; b=${body//\{name\}/$name}
       notify_enabled "$category" && post_discord "$t" "$b" "$color"
-    done < <(docker logs --since "${EVENT_WINDOW:-300s}" "$CONTAINER_NAME" 2>&1 | grep -aE "$pattern")
+    done < <(echo "$logs" | grep -aE "$pattern")
   done
 }
 
