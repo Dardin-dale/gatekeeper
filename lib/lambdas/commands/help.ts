@@ -21,6 +21,7 @@ export async function handleHelpCommand(): Promise<APIGatewayProxyResult> {
             `\`${slash} start [world]\` — start the server`,
             `\`${slash} stop [force]\` — stop the server (force skips the backup)`,
             `\`${slash} status\` — current status, world, players`,
+            `\`${slash} backup\` — back up the world now (server keeps running)`,
             `\`${slash} join\` — how to connect`,
             `\`${slash} worlds\` — the worlds you can start here`,
             `\`${slash} mods [world]\` — a world's mod list (and what to install)`,

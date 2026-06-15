@@ -9,6 +9,7 @@ import { ACTIVE_GAME } from "../games";
 import { InteractionType, InteractionResponseType } from "./commands/types";
 import { handleStartCommand } from "./commands/start";
 import { handleStopCommand } from "./commands/stop";
+import { handleBackupCommand } from "./commands/backup";
 import { handleStatusCommand } from "./commands/status";
 import { handleJoinCommand } from "./commands/join";
 import { handleModsCommand } from "./commands/mods";
@@ -144,6 +145,8 @@ export async function handler(
         }
         case "status":
           return await handleStatusCommand();
+        case "backup":
+          return await handleBackupCommand();
         case "schedule": {
           // Subcommand group: the actual action (set|clear|list) is one level
           // down — options[0] of the group, with its own options.
