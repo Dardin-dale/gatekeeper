@@ -21,7 +21,7 @@ export function ownerIds(): string[] {
 }
 
 /** The invoking user's id — `member.user.id` in a guild, `user.id` in a DM. */
-function callerId(interaction: any): string | undefined {
+export function callerId(interaction: any): string | undefined {
   return interaction?.member?.user?.id ?? interaction?.user?.id;
 }
 
@@ -40,12 +40,17 @@ export function isOwner(interaction: any): boolean {
  */
 export function requireOwner(interaction: any): APIGatewayProxyResult | null {
   if (isOwner(interaction)) return null;
+  // Show the caller their own numeric id (ephemeral, so only they see it) — the
+  // self-service way to get whitelisted into BOT_OWNER_IDS without hunting for it
+  // in Discord's shifting Developer-Mode UI.
+  const id = callerId(interaction);
+  const idLine = id ? `\nYour Discord user ID is \`${id}\` — the owner can add it to BOT_OWNER_IDS.` : "";
   return {
     statusCode: 200,
     body: JSON.stringify({
       type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
       data: {
-        content: "🔒 Only the bot owner can change cost-affecting settings.",
+        content: `🔒 Only the bot owner can change cost-affecting settings.${idLine}`,
         flags: 64, // ephemeral — private to the caller
       },
     }),

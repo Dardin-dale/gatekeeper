@@ -256,6 +256,7 @@ describe('Commands Lambda', () => {
 
       const body = JSON.parse(result.body);
       expect(body.data.content).toContain('Only the bot owner');
+      expect(body.data.content).toContain('999'); // shows the caller their own id
       expect(body.data.flags).toBe(64); // ephemeral
       // Never touched SSM — rejected before any read/write.
       expect(getMockSsmSend()).not.toHaveBeenCalled();
