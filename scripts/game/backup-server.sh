@@ -41,7 +41,8 @@ DATA_HOST=$(jq -r '.volumes[-1].hostPath' "$PROFILE")
 # Persona webhook post (same pattern as monitor.sh) so every backup — manual
 # stop, idle shutdown, or `cli backup create` — confirms itself in Discord.
 PERSONA_NAME=$(jq -r '.persona.characterName // "GATEKeeper"' "$PROFILE")
-PERSONA_AVATAR=$(jq -r '.persona.thumbnailUrl // empty' "$PROFILE")
+PERSONA_THUMB=$(jq -r '.persona.thumbnailUrl // empty' "$PROFILE")           # character art -> embed thumbnail
+PERSONA_ICON=$(jq -r '.persona.iconUrl // .persona.thumbnailUrl // empty' "$PROFILE") # bot icon -> webhook avatar
 PERSONA_FOOTER=$(jq -r '.persona.footer // empty' "$PROFILE")
 get_webhook_url() {
   local wj guild
@@ -65,11 +66,13 @@ post_discord() { # $1 = title, $2 = description, $3 = color (decimal)
   local url; url=$(get_webhook_url) || { log "no webhook configured; skipping Discord post"; return 0; }
   { [ -z "$url" ] || [ "$url" = "None" ]; } && { log "no webhook configured; skipping Discord post"; return 0; }
   local payload
-  payload=$(jq -n --arg name "$PERSONA_NAME" --arg avatar "$PERSONA_AVATAR" --arg footer "$PERSONA_FOOTER" \
+  payload=$(jq -n --arg name "$PERSONA_NAME" --arg icon "$PERSONA_ICON" --arg thumb "$PERSONA_THUMB" \
+    --arg footer "$PERSONA_FOOTER" \
     --arg title "$1" --arg desc "$2" --argjson color "$3" \
     '{username: $name, embeds: [{title: $title, description: $desc, color: $color}]}
      | if $footer != "" then .embeds[0].footer = {text: $footer} else . end
-     | if $avatar != "" then .avatar_url = $avatar else . end')
+     | if $thumb != "" then .embeds[0].thumbnail = {url: $thumb} else . end
+     | if $icon != "" then .avatar_url = $icon else . end')
   curl -s -m 10 -H "Content-Type: application/json" -X POST "$url" -d "$payload" \
     > /dev/null 2>&1 || log "WARNING: Discord post failed"
 }

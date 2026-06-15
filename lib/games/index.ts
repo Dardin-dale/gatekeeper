@@ -80,7 +80,8 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     // in full (e.g. Dr. Derek Manse) with his avatar — matches the lambda embeds.
     persona: {
       characterName: profile.persona.characterName,
-      thumbnailUrl: profile.persona.thumbnailUrl ?? '',
+      thumbnailUrl: profile.persona.thumbnailUrl ?? '', // character art -> embed thumbnail
+      iconUrl: profile.persona.iconUrl ?? '',           // bot app icon -> webhook avatar
       footer: profile.persona.footer,
       color: profile.persona.color, // event embeds default to the persona accent
     },

@@ -166,6 +166,14 @@ export interface GameEvent {
    * category; defaults to the category key.
    */
   label?: string;
+  /**
+   * Dedup by the extracted {name} instead of by the log line. Use for "joins"
+   * announced off a per-spawn line (Valheim names a player only at character
+   * spawn, which re-fires on every respawn): keying on the name announces each
+   * player once per session and skips respawns. Requires nameSed. Default false
+   * (dedup per line — right for deaths/raids, where each occurrence is distinct).
+   */
+  dedupByName?: boolean;
 }
 
 /**
@@ -302,6 +310,13 @@ export interface Persona {
   color: number;
   /** Public URL of the character thumbnail (Discord needs a URL, not a local file). */
   thumbnailUrl?: string;
+  /**
+   * Public URL of the BOT's icon (its Discord app icon). Used as the avatar on
+   * host webhook posts so they read as coming from the bot, while the character
+   * `thumbnailUrl` rides inside the embed. Falls back to thumbnailUrl when unset.
+   * e.g. https://cdn.discordapp.com/app-icons/<app-id>/<hash>.png
+   */
+  iconUrl?: string;
   /** Embed footer text. */
   footer: string;
   /** First-person lines for the /gate hail ping test. */

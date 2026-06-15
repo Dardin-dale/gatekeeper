@@ -116,7 +116,10 @@ get_webhook_url() {
 # (e.g. Dr. Derek Manse), so the embed itself stays clean: no author byline
 # repeating the same name/face, footer from the profile (game-agnostic).
 PERSONA_NAME=$(jq -r '.persona.characterName // "GATEKeeper"' "$PROFILE")
-PERSONA_AVATAR=$(jq -r '.persona.thumbnailUrl // empty' "$PROFILE")
+# Character art -> embed thumbnail ("the full image in the rich text"); bot app
+# icon -> webhook avatar (so posts read as the bot). Icon falls back to the art.
+PERSONA_THUMB=$(jq -r '.persona.thumbnailUrl // empty' "$PROFILE")
+PERSONA_ICON=$(jq -r '.persona.iconUrl // .persona.thumbnailUrl // empty' "$PROFILE")
 PERSONA_FOOTER=$(jq -r '.persona.footer // empty' "$PROFILE")
 PERSONA_COLOR=$(jq -r '.persona.color // 3776160' "$PROFILE") # default event embed color
 
@@ -136,13 +139,15 @@ post_discord() { # $1 = title, $2 = description, $3 = color (decimal), $4 = opti
   [ -z "$url" ] || [ "$url" = "None" ] && { log "no webhook configured; skipping Discord post"; return 0; }
   # Build the payload with jq so the name/avatar/text are safely JSON-escaped.
   local payload
-  payload=$(jq -n --arg name "$PERSONA_NAME" --arg avatar "$PERSONA_AVATAR" --arg footer "$PERSONA_FOOTER" \
+  payload=$(jq -n --arg name "$PERSONA_NAME" --arg icon "$PERSONA_ICON" --arg thumb "$PERSONA_THUMB" \
+    --arg footer "$PERSONA_FOOTER" \
     --arg title "$1" --arg desc "$2" --argjson color "$3" --argjson fields "${4:-[]}" \
     '{username: $name, embeds: [{title: $title, description: $desc, color: $color}]}
      | if $desc == "" then .embeds[0] |= del(.description) else . end
      | if $footer != "" then .embeds[0].footer = {text: $footer} else . end
      | if ($fields | length) > 0 then .embeds[0].fields = $fields else . end
-     | if $avatar != "" then .avatar_url = $avatar else . end')
+     | if $thumb != "" then .embeds[0].thumbnail = {url: $thumb} else . end
+     | if $icon != "" then .avatar_url = $icon else . end')
   curl -s -m 10 -H "Content-Type: application/json" -X POST "$url" -d "$payload" \
     > /dev/null 2>&1 || log "WARNING: Discord post failed"
 }
@@ -159,8 +164,9 @@ event_key() { echo "$1" | sed -E 's/Console: \[Info : Unity Log\] [0-9/:. ]*//';
 # triggered: a short --since window (the count is the level-triggered one).
 scan_events() { # $1 = mode ('seed' to suppress posts)
   [ "${EVENT_COUNT:-0}" -eq 0 ] && return 0
-  local mode="$1" i pattern title body nameSed color category line key name t b
+  local mode="$1" i id pattern title body nameSed color category dedupByName line key name t b
   for i in $(seq 0 $((EVENT_COUNT - 1))); do
+    id=$(echo "$EVENTS_JSON" | jq -r ".[$i].id")
     pattern=$(echo "$EVENTS_JSON" | jq -r ".[$i].pattern")
     title=$(echo "$EVENTS_JSON" | jq -r ".[$i].title")
     body=$(echo "$EVENTS_JSON" | jq -r ".[$i].body // \"\"")
@@ -170,14 +176,18 @@ scan_events() { # $1 = mode ('seed' to suppress posts)
     # Each event's notify category (a group of entries can share one, e.g. raids);
     # defaults to the event id. Toggled via `/<cmd> notify set <category> off`.
     category=$(echo "$EVENTS_JSON" | jq -r ".[$i] | .category // .id")
+    dedupByName=$(echo "$EVENTS_JSON" | jq -r ".[$i].dedupByName // false")
     while IFS= read -r line; do
       [ -z "$line" ] && continue
-      key=$(event_key "$line")
+      name=""
+      [ -n "$nameSed" ] && name=$(echo "$line" | sed -nE "${nameSed}p")
+      # Dedup key, NAMESPACED by event id so two events matching the same line
+      # (e.g. a death line also matches the spawn-based join) track separately.
+      # dedupByName keys on the player so respawns don't re-announce a join.
+      if [ "$dedupByName" = "true" ]; then key="${id}|n|${name}"; else key="${id}|l|$(event_key "$line")"; fi
       [ -n "${SEEN_EVENTS[$key]:-}" ] && continue
       SEEN_EVENTS[$key]=1
       [ "$mode" = "seed" ] && continue
-      name=""
-      [ -n "$nameSed" ] && name=$(echo "$line" | sed -nE "${nameSed}p")
       t=${title//\{name\}/$name}; b=${body//\{name\}/$name}
       notify_enabled "$category" && post_discord "$t" "$b" "$color"
     done < <(docker logs --since "${EVENT_WINDOW:-300s}" "$CONTAINER_NAME" 2>&1 | grep -aE "$pattern")

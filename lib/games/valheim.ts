@@ -105,8 +105,14 @@ export const valheim: GameProfile = {
       id: 'join',
       category: 'join',
       label: 'Joins',
-      pattern: 'Player joined server .* now [0-9]+ player',
-      title: '🛡️ A viking enters the hall',
+      // A player's NAME first appears at character spawn ("Got character ZDOID
+      // from <name> : <id>"), which re-fires on every respawn — so dedup by name
+      // to announce each viking once per session. (The death event matches the
+      // same line family but keys per-line, so the two never cross-suppress.)
+      pattern: 'Got character ZDOID from .+ :',
+      nameSed: 's/.*Got character ZDOID from (.+) : .*/\\1/',
+      dedupByName: true,
+      title: '🛡️ {name} enters the hall',
     },
     {
       id: 'leave',
@@ -153,6 +159,9 @@ export const valheim: GameProfile = {
     // not hotlink-blocked). TODO(assets-bucket): self-host alongside the Manse
     // hologram when the public assets bucket lands.
     thumbnailUrl: 'https://static.wikia.nocookie.net/valheim/images/5/52/Munin.png',
+    // MuninBot's Discord app icon — the webhook avatar, so host posts read as the
+    // bot while the raven art (thumbnailUrl) shows inside the embed.
+    iconUrl: 'https://cdn.discordapp.com/app-icons/1514149450019508224/182b0b7af0816c2602ce42754ad7e2dc.png',
     footer: 'Memory of the All-Father',
     lines: {
       starting: 'The ravens take wing — your world is waking.',
