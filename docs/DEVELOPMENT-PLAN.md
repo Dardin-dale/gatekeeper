@@ -250,6 +250,59 @@ per-guild SSM only if someone asks); whether `/gate status` should show the next
 opening (probably yes, cheap); `register-commands` + persona lines for countdown flavor; tests
 (handler unit tests + a synth assertion on the schedule group).
 
+### Phase 12 — Event announcer + granular notifications (✅ DEPLOYED, both stacks)
+- [x] **Per-category notify toggles** — `/gate notify set|list` writes SSM
+      `/gatekeeper/<game>/notify/<category>` (read by the host `post_discord`; absent = on), so a guild
+      can silence any lifecycle/flavor category without touching the action it confirms.
+- [x] **Profile-driven event announcer** — `GameProfile.events[]` (id/pattern/title/body/color/category);
+      the monitor's `scan_events` scrapes container logs each cycle and posts a persona embed per NEW
+      match (deduped), gated by the category toggle. Deaths/raids/joins, Munin-voiced Valheim raids.
+- [x] **Named Valheim joins** — read the ZDOID spawn line for the player name; `dedupByName` keys dedup
+      on the player so respawns/deaths don't re-announce. **Bot-icon webhook avatar**: `persona.iconUrl`
+      (app icon) is the avatar, character art moves into the embed thumbnail.
+- [x] **`scan_events` perf** — read the log window once per cycle, grep per event (was one `docker logs`
+      call per event — 16× for Valheim every cycle).
+
+### Phase 13 — Owner controls, private sessions, edit-in-place (✅ DEPLOYED 2026-06-16, both stacks)
+- [x] **Profile-defaulted, tunable cost timers** — `autoShutdownMinutes`/`bootTimeoutMinutes` on the
+      GameProfile (15/45) seed the SSM params; `.env` overrides; **`npm run cli config show|set`** and
+      owner-only **`/gate config show|set`** retune them live (monitor re-reads SSM each cycle).
+- [x] **Owner gate** — `BOT_OWNER_IDS` (.env → Commands Lambda) is an explicit Discord-user allowlist
+      for spend-affecting commands (multi-guild, so not a guild role). `requireOwner` FAILS CLOSED and
+      denies ephemerally (the denial shows the caller their own id, to self-serve whitelisting).
+- [x] **Notification copy/visuals** — status→instruction line breaks; lambda webhook posts use the bot
+      icon avatar (shared `personaAvatarUrl`); the readiness ping states the idle auto-shutoff; the
+      boot-timeout message uses the per-game `$SLASH_CMD` (was hardcoded `/gate`, wrong on Valheim).
+- [x] **Private (quiet) sessions** — `/gate start private` sets SSM `session-private` (per-start; reset
+      to public on stop), DMs the owner a heads-up (true DM, skips the caller), suppresses the public
+      readiness/idle/backup/offline posts, and makes `join`/`status` reply ephemerally (🔒). **`/gate
+      open`** flips a running private session public and announces the join details (posts itself if
+      already live, else lets the host's normal ping fire).
+- [x] **Edit-in-place (Option A)** — a session's running lifecycle is ONE webhook message edited in
+      place: **🟢 Online → 💤 Winding Down → 🛑 Offline**. Host posts with `?wait=true` + stores
+      `status-message-id`; idle edits it; the offline Lambda PATCHes it (fallback to a fresh post).
+      `/gate open`'s announcement captures the id too. Backup-complete stays a separate post (→ TTL
+      auto-delete, below).
+
+### Phase 14 — Channel-clutter reduction (PLANNED)
+Driven by "I don't want stale messages piling up." Order: edit-in-place B → auto-delete → buttons.
+- [ ] **Edit-in-place Option B** — fold "Starting" into the single session message (Starting → Online →
+      Winding Down → Offline). Requires `/gate start` to post the lifecycle message via the **webhook**
+      (capture id) with an ephemeral ack, because "Starting" today is the interaction reply (token
+      expires ~15 min, host can't edit it). Crux: the start→host `status-message-id` handoff (drop the
+      host startup force-clear; `start` sets it, the offline Lambda clears on stop, host online becomes
+      edit-or-post for scheduler/console starts). Full plan: memory `edit-in-place-lifecycle-plan.md`.
+- [ ] **TTL auto-delete of lifecycle posts** — per-game flag (default 16h, like the timers); on post,
+      schedule a one-off EventBridge delete (reuse the scheduler group/role) → a small delete-message
+      Lambda. Scope: session lifecycle posts (online/offline/idle/backup), not chat/flavor.
+- [ ] **Status-message buttons** — Open / Stop / Extend on the live status message (we already handle
+      `MESSAGE_COMPONENT`; edit-in-place gives a persistent message to attach them to). **Extend** adds
+      time to the idle countdown via a per-game config default (5 min) — needs the monitor to honor an
+      "extend-until" signal.
+- [ ] **Presence privacy (deferred, low priority)** — the `game-presence` sidecar still shows
+      "Playing <game>" during a private session. Accepted gap: `/gate status` is unrestricted anyway, so
+      it reveals nothing status doesn't. Fix if wanted: `presence.js` reads `session-private`.
+
 ---
 
 ## Future directions (deferred)
@@ -296,7 +349,7 @@ so adopting it later is additive, not a rewrite.
 ---
 
 ## Testing strategy (tiers)
-1. **Unit (Jest)** — dispatch, profile registry, world config, mods, A2S parse. Fast, no AWS. *(86 passing)*
+1. **Unit (Jest)** — dispatch, profile registry, world config, mods, A2S parse, owner gate, private sessions, edit-in-place. Fast, no AWS. *(117 passing)*
 2. **Local Docker** — `docker-compose.local.yml` + `a2s-query.js`. Validates the runtime with no AWS spend. *(✅ passing)*
 3. **ngrok** — `npm run local-dev` behind a tunnel to test real Discord interactions without deploying.
 4. **Deploy** — the isolated `GateStack-AbioticFactor`; only EC2/Route53/API-Gateway need this.
