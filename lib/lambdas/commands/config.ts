@@ -25,6 +25,9 @@ function embed(title: string, description: string, color: number, footerSuffix?:
           color,
           footer: { text: footerSuffix ? personaFooter(footerSuffix) : persona.botName },
         }],
+        // Owner-only admin surface — keep it private to the caller, matching the
+        // ephemeral denial, so cost-tuning never clutters the channel.
+        flags: 64,
       },
     }),
   };

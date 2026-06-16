@@ -278,6 +278,7 @@ describe('Commands Lambda', () => {
       const result = await handler(event, mockContext);
 
       const body = JSON.parse(result.body);
+      expect(body.data.flags).toBe(64); // owner admin surface is private
       expect(body.data.embeds[0].title).toContain('Cost-Guardrail Timers');
       expect(body.data.embeds[0].description).toContain('auto-shutdown');
       expect(body.data.embeds[0].description).toContain('boot-timeout');
