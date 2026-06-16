@@ -213,7 +213,9 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
 
     // Join info once the game is actually joinable — same per-game format as
     // /gate join (address/port/password/lobby code via the shared util/join-info).
-    if (status === 'running' && gameLive && ACTIVE_GAME.join.type === 'address') {
+    // Both address AND join-code games (Valheim): without this a private Valheim
+    // session has no way to surface the code (the readiness ping is suppressed).
+    if (status === 'running' && gameLive) {
       const host = joinHost(publicIp);
       if (host) {
         fields.push(...await buildJoinFields(host));
