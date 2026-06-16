@@ -410,6 +410,34 @@ describe('Commands Lambda', () => {
       expect(JSON.parse(result.body).data.flags).toBeUndefined();
     });
 
+    test('stop replies ephemerally during a private session', async () => {
+      getMockGetSessionPrivate().mockResolvedValue(true);
+      getMockGetFastServerStatus().mockResolvedValue({ status: 'running' });
+      getMockSsmSend().mockResolvedValue({});
+      const event = createDiscordEvent({
+        type: 2,
+        data: { name: 'gate', options: [{ name: 'stop' }] },
+      });
+      const result = await handler(event, mockContext);
+
+      const body = JSON.parse(result.body);
+      expect(body.data.flags).toBe(64);
+      expect(body.data.embeds[0].title).toContain('Stopping');
+    });
+
+    test('stop is public in a normal session', async () => {
+      getMockGetSessionPrivate().mockResolvedValue(false);
+      getMockGetFastServerStatus().mockResolvedValue({ status: 'running' });
+      getMockSsmSend().mockResolvedValue({});
+      const event = createDiscordEvent({
+        type: 2,
+        data: { name: 'gate', options: [{ name: 'stop' }] },
+      });
+      const result = await handler(event, mockContext);
+
+      expect(JSON.parse(result.body).data.flags).toBeUndefined();
+    });
+
     test('open on a private running session clears the flag and is ephemeral', async () => {
       getMockGetSessionPrivate().mockResolvedValue(true);
       getMockGetServerLive().mockResolvedValue(false); // still booting -> host will announce

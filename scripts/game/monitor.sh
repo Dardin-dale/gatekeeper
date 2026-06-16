@@ -385,7 +385,12 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
     log "Idle for ${IDLE}s (threshold ${THRESHOLD}s)"
     if [ "$IDLE" -gt "$THRESHOLD" ]; then
       log "Idle threshold exceeded — backing up and shutting down"
-      notify_enabled idle && post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904
+      # Private session stays quiet on the way down too (read fresh: /<cmd> open
+      # may have flipped it public mid-session).
+      IDLE_PRIVATE=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
+      if [ "$IDLE_PRIVATE" != "true" ] && notify_enabled idle; then
+        post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904
+      fi
       /usr/local/bin/backup-server.sh || log "WARNING: backup failed; stopping anyway (data persists on EBS)"
       invalidate_session_params
       aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region "$REGION"

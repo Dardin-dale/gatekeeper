@@ -11,6 +11,17 @@ const ACTIVE_WORLD_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/active-world`;
 const DISCORD_WEBHOOK_BASE = `/gatekeeper/${ACTIVE_GAME.id}/discord-webhook`;
 const JOIN_CODE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/join-code`;
 const SERVER_LIVE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/server-live`;
+const SESSION_PRIVATE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/session-private`;
+
+/** Was the just-ended session private? Then suppress the public "offline" post. */
+async function wasSessionPrivate(): Promise<boolean> {
+  try {
+    const r = await ssmClient.send(new GetParameterCommand({ Name: SESSION_PRIVATE_PARAM }));
+    return r.Parameter?.Value === 'true';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * The join code is per-session: once the instance is stopped it's dead, and
@@ -19,7 +30,10 @@ const SERVER_LIVE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/server-live`;
  * crash, console — so it's the invalidation catch-all.
  */
 async function invalidateSessionParams(): Promise<void> {
-  for (const [name, value] of [[JOIN_CODE_PARAM, 'none'], [SERVER_LIVE_PARAM, 'false']]) {
+  // Also reset session-private to public: it's per-start, so clearing it on stop
+  // keeps the default public — a later scheduled/normal start is never mistaken
+  // for the previous private session.
+  for (const [name, value] of [[JOIN_CODE_PARAM, 'none'], [SERVER_LIVE_PARAM, 'false'], [SESSION_PRIVATE_PARAM, 'false']]) {
     try {
       await ssmClient.send(new PutParameterCommand({
         Name: name, Value: value, Type: 'String', Overwrite: true,
@@ -83,8 +97,14 @@ export async function handler(
     switch (eventType) {
       case 'EC2 Instance State-change Notification':
         if (event.detail.state === 'stopped') {
+          // Read privacy BEFORE invalidating (which resets the flag to public).
+          const privateSession = await wasSessionPrivate();
           await invalidateSessionParams();
-          message = handleEC2StoppedEvent(event.detail);
+          if (privateSession) {
+            console.log('Private session ended — suppressing public offline notification');
+          } else {
+            message = handleEC2StoppedEvent(event.detail);
+          }
         }
         break;
       default:

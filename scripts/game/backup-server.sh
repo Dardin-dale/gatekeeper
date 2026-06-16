@@ -62,6 +62,14 @@ notify_enabled() { # $1 = category
         --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || true)
   [ "$v" != "off" ]
 }
+# A private (quiet) session suppresses the backup-complete post too, so a private
+# game's backups don't surface in the channel. `|| true` for the same set -e reason.
+session_private() {
+  local v
+  v=$(aws ssm get-parameter --name "/gatekeeper/${GAME_ID}/session-private" \
+        --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || true)
+  [ "$v" = "true" ]
+}
 post_discord() { # $1 = title, $2 = description, $3 = color (decimal)
   local url; url=$(get_webhook_url) || { log "no webhook configured; skipping Discord post"; return 0; }
   { [ -z "$url" ] || [ "$url" = "None" ]; } && { log "no webhook configured; skipping Discord post"; return 0; }
@@ -98,7 +106,7 @@ rm -f "$ARCHIVE"
 log "Backup complete: $DEST"
 # `if` (not `&&`) so a silenced category's non-zero exit doesn't trip set -e and
 # make this script report a false backup failure to its caller (the monitor).
-if notify_enabled backup; then
+if notify_enabled backup && ! session_private; then
   post_discord "💾 Backup Complete" "World data archived safely — \`${TS}.tar.gz\` (${SIZE}).
 Everyone's progress is saved." 3776160
 fi

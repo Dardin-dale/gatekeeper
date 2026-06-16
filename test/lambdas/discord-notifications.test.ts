@@ -130,6 +130,18 @@ describe('Discord Notifications Lambda', () => {
       await handler(stoppedEvent('running'), mockContext);
       expect(getMockFetch()).not.toHaveBeenCalled();
     });
+
+    test('suppresses the offline post when the session was private', async () => {
+      getMockSsmSend().mockImplementation((command: any) => {
+        if (command.input?.Name === '/gatekeeper/abiotic-factor/session-private') {
+          return Promise.resolve({ Parameter: { Value: 'true' } });
+        }
+        return Promise.resolve({}); // PutParameter invalidations etc.
+      });
+      await handler(stoppedEvent(), mockContext);
+      // Private session → no public "Server Offline" message.
+      expect(getMockFetch()).not.toHaveBeenCalled();
+    });
   });
 
   describe('Unknown / retired event types', () => {

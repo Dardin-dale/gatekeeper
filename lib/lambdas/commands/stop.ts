@@ -22,6 +22,7 @@ import {
   getInstanceStatus,
   getStatusMessage,
   getFastServerStatus,
+  getSessionPrivate,
 } from "../utils/aws-clients";
 import {
   createSuccessResponse,
@@ -41,6 +42,12 @@ export async function handleStopCommand(guildId?: string, force: boolean = false
   try {
     console.log(`Stopping server command initiated (force: ${force})`);
 
+    // Keep a private session quiet end-to-end: the stop reply is ephemeral so
+    // the channel never sees a private game wind down. (The offline/idle/backup
+    // lifecycle posts are suppressed at their source for the same reason.)
+    const priv = await getSessionPrivate();
+    const flags = priv ? { flags: 64 } : {};
+
     // Check current status
     const { status } = await getFastServerStatus();
     console.log(`Current instance status: ${status}`);
@@ -51,6 +58,7 @@ export async function handleStopCommand(guildId?: string, force: boolean = false
         body: JSON.stringify({
           type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
           data: {
+            ...flags,
             embeds: [{
               title: '❌ Server Already Stopped',
               description: 'The server is not currently running.',
@@ -68,6 +76,7 @@ export async function handleStopCommand(guildId?: string, force: boolean = false
         body: JSON.stringify({
           type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
           data: {
+            ...flags,
             embeds: [{
               title: '🛑 Server Already Stopping',
               description: 'The server is currently shutting down. Please wait.',
@@ -95,6 +104,7 @@ export async function handleStopCommand(guildId?: string, force: boolean = false
         body: JSON.stringify({
           type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
           data: {
+            ...flags,
             embeds: [{
               title: '⚡ Server Force Stopped',
               description: '**Emergency shutdown:**\n' +
@@ -128,6 +138,7 @@ export async function handleStopCommand(guildId?: string, force: boolean = false
       body: JSON.stringify({
         type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
         data: {
+          ...flags,
           embeds: [{
             title: '🛑 Server Stopping',
             description: '**Shutdown sequence initiated:**\n' +
