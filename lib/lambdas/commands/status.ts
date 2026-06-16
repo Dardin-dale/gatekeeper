@@ -23,6 +23,7 @@ import {
   getStatusMessage,
   getFastServerStatus,
   getServerLive,
+  getSessionPrivate,
 } from "../utils/aws-clients";
 import {
   createSuccessResponse,
@@ -41,12 +42,17 @@ import { personaEmbed, slash } from "./util/persona";
 import { buildJoinFields, joinHost } from "./util/join-info";
 import { getScheduledOpening } from "./schedule";
 
-export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
+export async function handleStatusCommand(privateFlag = false): Promise<APIGatewayProxyResult> {
   try {
     console.log(`Getting server status details`);
 
     const { status, message: fastMessage, launchTime, publicIp } = await getFastServerStatus();
     console.log(`Server status retrieved: ${status}`);
+
+    // Reply visibility auto-follows the session (or a manual private:True),
+    // so a private game's status — including join details — stays off-channel.
+    const sessionPrivate = await getSessionPrivate();
+    const ephemeral = privateFlag || sessionPrivate;
 
     // Try to get the active world and player count from SSM. Abiotic Factor is
     // address-based (no join code); player count comes from the on-host A2S monitor.
@@ -200,6 +206,11 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
       });
     }
 
+    // Mark a private (quiet) session so it's clear there's no public announcement.
+    if (status === 'running' && sessionPrivate) {
+      fields.push({ name: 'Visibility', value: '🔒 Private session', inline: true });
+    }
+
     // Join info once the game is actually joinable — same per-game format as
     // /gate join (address/port/password/lobby code via the shared util/join-info).
     if (status === 'running' && gameLive && ACTIVE_GAME.join.type === 'address') {
@@ -225,6 +236,7 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
             footerSuffix,
             extra: { fields, timestamp: new Date().toISOString() },
           })],
+          ...(ephemeral ? { flags: 64 } : {}),
         },
       }),
     };

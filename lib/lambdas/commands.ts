@@ -14,6 +14,7 @@ import { handleNotifyCommand } from "./commands/notify";
 import { handleConfigCommand } from "./commands/config";
 import { handleStatusCommand } from "./commands/status";
 import { handleJoinCommand } from "./commands/join";
+import { handleOpenCommand } from "./commands/open";
 import { handleModsCommand } from "./commands/mods";
 import { handleWorldsCommand } from "./commands/worlds";
 import { handleHailCommand } from "./commands/hail";
@@ -111,8 +112,10 @@ export async function handler(
       switch (subName) {
         case "hail":
           return await handleHailCommand();
-        case "join":
-          return await handleJoinCommand();
+        case "join": {
+          const isPrivate = subOptions?.find((o: any) => o.name === "private")?.value || false;
+          return await handleJoinCommand(isPrivate);
+        }
         case "mods": {
           const worldName = subOptions?.find((o: any) => o.name === "world")?.value;
           return await handleModsCommand(worldName, guild_id);
@@ -150,14 +153,19 @@ export async function handler(
       switch (subName) {
         case "start": {
           const worldName = subOptions?.find((o: any) => o.name === "world")?.value;
-          return await handleStartCommand(worldName, guild_id);
+          const isPrivate = subOptions?.find((o: any) => o.name === "private")?.value || false;
+          return await handleStartCommand(worldName, guild_id, isPrivate);
         }
         case "stop": {
           const force = subOptions?.find((o: any) => o.name === "force")?.value || false;
           return await handleStopCommand(guild_id, force);
         }
-        case "status":
-          return await handleStatusCommand();
+        case "status": {
+          const isPrivate = subOptions?.find((o: any) => o.name === "private")?.value || false;
+          return await handleStatusCommand(isPrivate);
+        }
+        case "open":
+          return await handleOpenCommand(guild_id);
         case "backup":
           return await handleBackupCommand();
         case "schedule": {

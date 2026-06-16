@@ -1,7 +1,7 @@
 import { APIGatewayProxyResult } from "aws-lambda";
 import { InteractionResponseType } from "./types";
 import { ACTIVE_GAME } from "../../games";
-import { getFastServerStatus, getServerLive } from "../utils/aws-clients";
+import { getFastServerStatus, getServerLive, getSessionPrivate } from "../utils/aws-clients";
 import { personaEmbed, slash } from "./util/persona";
 import { buildJoinFields, joinHost, joinHint } from "./util/join-info";
 
@@ -10,17 +10,26 @@ import { buildJoinFields, joinHost, joinHint } from "./util/join-info";
  * from the profile's `join` discriminated union; the actual field rendering
  * (address/port/password/lobby code) is shared with /gate status via
  * util/join-info so both always show the same per-game format.
+ *
+ * Reply visibility auto-follows the session: during a private session (or when
+ * the caller passes private:True), the reply is ephemeral so the join details
+ * stay off the channel — that's how friends join a quiet session.
  */
-export async function handleJoinCommand(): Promise<APIGatewayProxyResult> {
+export async function handleJoinCommand(privateFlag = false): Promise<APIGatewayProxyResult> {
   const join = ACTIVE_GAME.join;
+  const sessionPrivate = await getSessionPrivate();
+  const ephemeral = privateFlag || sessionPrivate;
 
   const respond = (data: Record<string, unknown>): APIGatewayProxyResult => ({
     statusCode: 200,
     body: JSON.stringify({
       type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-      data,
+      data: { ...data, ...(ephemeral ? { flags: 64 } : {}) },
     }),
   });
+  // Mark the reply when the SESSION (not just this reply) is private, so the
+  // player knows there's no public announcement and the details are theirs.
+  const privateNote = sessionPrivate ? "\n\n🔒 Private session — these details are just for you." : "";
 
   if (join.type !== "address") {
     return respond({
@@ -69,7 +78,7 @@ export async function handleJoinCommand(): Promise<APIGatewayProxyResult> {
   return respond({
     embeds: [personaEmbed({
       title: "🔌 Join the server",
-      description: joinHint() ?? `Connect in-game to \`${host}:${join.port}\``,
+      description: (joinHint() ?? `Connect in-game to \`${host}:${join.port}\``) + privateNote,
       extra: { fields: await buildJoinFields(host) },
     })],
   });

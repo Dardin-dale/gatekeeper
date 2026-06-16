@@ -18,11 +18,12 @@ export async function handleHelpCommand(): Promise<APIGatewayProxyResult> {
         {
           name: "Server",
           value: [
-            `\`${slash} start [world]\` — start the server`,
+            `\`${slash} start [world] [private]\` — start the server (private = quiet session)`,
             `\`${slash} stop [force]\` — stop the server (force skips the backup)`,
             `\`${slash} status\` — current status, world, players`,
             `\`${slash} backup\` — back up the world now (server keeps running)`,
             `\`${slash} join\` — how to connect`,
+            `\`${slash} open\` — open a private session to the channel`,
             `\`${slash} worlds\` — the worlds you can start here`,
             `\`${slash} mods [world]\` — a world's mod list (and what to install)`,
             `\`${slash} schedule set|clear|list\` — schedule an opening (pre-warms on time)`,

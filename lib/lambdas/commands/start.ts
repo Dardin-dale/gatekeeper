@@ -37,9 +37,9 @@ import { sendFollowUpMessage } from "../utils/discord-followup";
 import { InteractionResponseType } from "./types";
 import { persona, personaFooter, slash } from "./util/persona";
 
-export async function handleStartCommand(worldName?: string, guildId?: string): Promise<APIGatewayProxyResult> {
+export async function handleStartCommand(worldName?: string, guildId?: string, isPrivate = false): Promise<APIGatewayProxyResult> {
   try {
-    console.log(`Starting server command - worldName: ${worldName}, guildId: ${guildId}`);
+    console.log(`Starting server command - worldName: ${worldName}, guildId: ${guildId}, private: ${isPrivate}`);
 
     // Check current status
     const { status } = await getFastServerStatus();
@@ -173,6 +173,19 @@ export async function handleStartCommand(worldName?: string, guildId?: string): 
       console.log(`Active world configuration saved`);
     }
 
+    // Record the session's privacy up front (always set, so a normal start
+    // resets a prior private session to public). The host reads this to decide
+    // whether to post the public readiness ping; join/status read it to decide
+    // whether to reply privately. `/<cmd> open` flips it back to 'false'.
+    await withRetry(() =>
+      ssmClient.send(new PutParameterCommand({
+        Name: SSM_PARAMS.SESSION_PRIVATE,
+        Value: isPrivate ? 'true' : 'false',
+        Type: 'String',
+        Overwrite: true,
+      }))
+    );
+
     // Start the instance
     console.log(`Starting EC2 instance: ${SERVER_INSTANCE_ID}`);
     await withRetry(() => ec2Client.send(new StartInstancesCommand({
@@ -182,16 +195,26 @@ export async function handleStartCommand(worldName?: string, guildId?: string): 
 
     const displayWorldName = selectedWorldConfig ? selectedWorldConfig.name : undefined;
 
+    // Private start: no public readiness ping, so tell the starter how friends
+    // get in (each runs `/<cmd> join` for private details), and keep this very
+    // reply ephemeral so the channel never sees the session spin up.
+    const description = isPrivate
+      ? `${persona.lines?.starting ?? 'The server is powering up.'} ` +
+        'First boot can take several minutes while the server provisions.\n\n' +
+        `🔒 **Private session** — no public announcement. Friends join with \`${slash} join\` ` +
+        `(replies privately). Open it to the channel anytime with \`${slash} open\`.`
+      : `${persona.lines?.starting ?? 'The server is powering up.'} ` +
+        'First boot can take several minutes while the server provisions.\n\n' +
+        'You\'ll get a notification with the join address when it\'s live.';
+
     return {
       statusCode: 200,
       body: JSON.stringify({
         type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
         data: {
           embeds: [{
-            title: '🚀 Server Starting',
-            description: `${persona.lines?.starting ?? 'The server is powering up.'} ` +
-                        'First boot can take several minutes while the server provisions.\n\n' +
-                        'You\'ll get a notification with the join address when it\'s live.',
+            title: isPrivate ? '🚀 Server Starting · 🔒 Private' : '🚀 Server Starting',
+            description,
             color: 0x39a0a0,
             fields: displayWorldName ? [{
               name: '🌍 World',
@@ -202,7 +225,8 @@ export async function handleStartCommand(worldName?: string, guildId?: string): 
               text: persona.botName
             },
             timestamp: new Date().toISOString(),
-          }]
+          }],
+          ...(isPrivate ? { flags: 64 } : {}), // ephemeral so the channel never sees a private session start
         }
       })
     };

@@ -81,6 +81,7 @@ BOOT_TIMEOUT_PARAM="/gatekeeper/${GAME_ID}/boot-timeout-minutes"
 ACTIVE_WORLD_PARAM="/gatekeeper/${GAME_ID}/active-world"
 JOIN_CODE_PARAM="/gatekeeper/${GAME_ID}/join-code"
 SERVER_LIVE_PARAM="/gatekeeper/${GAME_ID}/server-live"
+SESSION_PRIVATE_PARAM="/gatekeeper/${GAME_ID}/session-private" # 'true' = quiet session: skip the public online ping
 
 put_param() { # $1 = name, $2 = value (best-effort)
   aws ssm put-parameter --name "$1" --type String --value "$2" --overwrite \
@@ -329,7 +330,15 @@ while true; do
         DESC="${DESC}
 💤 Shuts down automatically after ${ASD} min idle."
       fi
-      notify_enabled online && post_discord "🟢 Server Online" "$DESC" 3776160 "$JOIN_FIELDS"
+      # Private (quiet) session: skip the public readiness broadcast entirely —
+      # players pull join details privately via `/<cmd> join`. `/<cmd> open`
+      # flips this flag off (and posts the announcement itself if already live).
+      SESSION_PRIVATE=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
+      if [ "$SESSION_PRIVATE" = "true" ]; then
+        log "Private session — skipping public Server Online ping"
+      else
+        notify_enabled online && post_discord "🟢 Server Online" "$DESC" 3776160 "$JOIN_FIELDS"
+      fi
     fi
   else
     rm -f "$LIVE_STATE_FILE"

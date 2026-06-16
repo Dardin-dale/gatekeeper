@@ -73,6 +73,7 @@ export const SSM_PARAMS = {
   PLAYER_COUNT: `${SSM_PREFIX}/player-count`,
   JOIN_CODE: `${SSM_PREFIX}/join-code`, // per-session lobby code scraped by the host monitor ('none' = absent)
   SERVER_LIVE: `${SSM_PREFIX}/server-live`, // 'true' while the game answers the host monitor's liveness checks
+  SESSION_PRIVATE: `${SSM_PREFIX}/session-private`, // 'true' for a quiet session: host skips the public online ping, join/status reply privately. Set per-start, flipped off by /<cmd> open.
   PREWARM_MINUTES: `${SSM_PREFIX}/prewarm-minutes`, // scheduled openings: start this many minutes before the announced time
   // Per-category notification toggles: /gatekeeper/<game-id>/notify/<category> = on|off
   // (read by the host post_discord; absent = on). See lib/lambdas/commands/notify.ts.
@@ -131,6 +132,24 @@ export async function getServerLive(): Promise<boolean> {
     return result.Parameter?.Value !== 'false';
   } catch (err) {
     return true;
+  }
+}
+
+/**
+ * Whether the current session is private (quiet): started with `/<cmd> start
+ * private`. The host then skips the public "Server Online" broadcast, and
+ * /<cmd> join|status reply ephemerally. Set per-start (so a normal start resets
+ * it to public) and flipped off by `/<cmd> open`. Absent/anything-but-'true'
+ * counts as public — the safe default (never accidentally hides a public game).
+ */
+export async function getSessionPrivate(): Promise<boolean> {
+  try {
+    const result = await ssmClient.send(new GetParameterCommand({
+      Name: SSM_PARAMS.SESSION_PRIVATE,
+    }));
+    return result.Parameter?.Value === 'true';
+  } catch (err) {
+    return false;
   }
 }
 

@@ -18,6 +18,7 @@ jest.mock('../../lib/lambdas/utils/aws-clients', () => {
   const mockS3Send = jest.fn();
   const mockGetFastServerStatus = jest.fn();
   const mockGetServerLive = jest.fn();
+  const mockGetSessionPrivate = jest.fn();
   const mockGetStatusMessage = jest.fn((status: string) => {
     switch (status) {
       case 'running': return 'Server is online and ready to play!';
@@ -32,6 +33,7 @@ jest.mock('../../lib/lambdas/utils/aws-clients', () => {
   (global as any).__mockS3Send = mockS3Send;
   (global as any).__mockGetFastServerStatus = mockGetFastServerStatus;
   (global as any).__mockGetServerLive = mockGetServerLive;
+  (global as any).__mockGetSessionPrivate = mockGetSessionPrivate;
   (global as any).__mockGetStatusMessage = mockGetStatusMessage;
 
   return {
@@ -46,6 +48,7 @@ jest.mock('../../lib/lambdas/utils/aws-clients', () => {
       DISCORD_WEBHOOK: '/gatekeeper/abiotic-factor/discord-webhook',
       AUTO_SHUTDOWN_MINUTES: '/gatekeeper/abiotic-factor/auto-shutdown-minutes',
       BOOT_TIMEOUT_MINUTES: '/gatekeeper/abiotic-factor/boot-timeout-minutes',
+      SESSION_PRIVATE: '/gatekeeper/abiotic-factor/session-private',
       GUILD_DEFAULT_WORLD_PREFIX: '/gatekeeper/abiotic-factor/discord',
     },
     withRetry: async <T>(operation: () => Promise<T>) => operation(),
@@ -54,6 +57,7 @@ jest.mock('../../lib/lambdas/utils/aws-clients', () => {
     getFastServerStatus: mockGetFastServerStatus,
     getStatusMessage: mockGetStatusMessage,
     getServerLive: mockGetServerLive,
+    getSessionPrivate: mockGetSessionPrivate,
   };
 });
 
@@ -61,6 +65,7 @@ jest.mock('../../lib/lambdas/utils/aws-clients', () => {
 const getMockVerifyKey = () => (global as any).__mockVerifyKey as jest.Mock;
 const getMockGetFastServerStatus = () => (global as any).__mockGetFastServerStatus as jest.Mock;
 const getMockGetServerLive = () => (global as any).__mockGetServerLive as jest.Mock;
+const getMockGetSessionPrivate = () => (global as any).__mockGetSessionPrivate as jest.Mock;
 const getMockSsmSend = () => (global as any).__mockSsmSend as jest.Mock;
 
 // Import after mocking
@@ -105,6 +110,10 @@ describe('Commands Lambda', () => {
     // Default: the game answers liveness checks (server-live param 'true'/absent)
     getMockGetServerLive().mockReset();
     getMockGetServerLive().mockResolvedValue(true);
+
+    // Default: sessions are public unless a test opts into private
+    getMockGetSessionPrivate().mockReset();
+    getMockGetSessionPrivate().mockResolvedValue(false);
 
     // Default SSM behavior
     getMockSsmSend().mockRejectedValue({ name: 'ParameterNotFound' });
@@ -315,6 +324,112 @@ describe('Commands Lambda', () => {
       expect(JSON.parse(result.body).data.embeds[0].title).toContain('Invalid');
       const put = getMockSsmSend().mock.calls.find((c: any) => c[0]?.constructor?.name === 'PutParameterCommand');
       expect(put).toBeUndefined();
+    });
+  });
+
+  describe('Private sessions', () => {
+    test('start private writes session-private=true and replies ephemerally', async () => {
+      getMockGetFastServerStatus().mockResolvedValue({ status: 'stopped' });
+      getMockSsmSend().mockReset();
+      getMockSsmSend().mockResolvedValue({});
+      const event = createDiscordEvent({
+        type: 2,
+        data: { name: 'gate', options: [{ name: 'start', options: [{ name: 'private', value: true }] }] },
+      });
+      const result = await handler(event, mockContext);
+
+      const body = JSON.parse(result.body);
+      expect(body.data.flags).toBe(64); // private start is ephemeral
+      expect(body.data.embeds[0].title).toContain('Private');
+      const wrote = getMockSsmSend().mock.calls.find(
+        (c: any) => c[0]?.input?.Name?.includes('session-private'),
+      );
+      expect(wrote[0].input.Value).toBe('true');
+    });
+
+    test('a normal start resets session-private to false', async () => {
+      getMockGetFastServerStatus().mockResolvedValue({ status: 'stopped' });
+      getMockSsmSend().mockReset();
+      getMockSsmSend().mockResolvedValue({});
+      const event = createDiscordEvent({
+        type: 2,
+        data: { name: 'gate', options: [{ name: 'start' }] },
+      });
+      await handler(event, mockContext);
+
+      const wrote = getMockSsmSend().mock.calls.find(
+        (c: any) => c[0]?.input?.Name?.includes('session-private'),
+      );
+      expect(wrote[0].input.Value).toBe('false');
+    });
+
+    test('join replies ephemerally during a private session', async () => {
+      getMockGetSessionPrivate().mockResolvedValue(true);
+      getMockGetFastServerStatus().mockResolvedValue({ status: 'running', publicIp: '54.0.0.1' });
+      getMockGetServerLive().mockResolvedValue(true);
+      getMockSsmSend().mockResolvedValue({ Parameter: undefined });
+      const event = createDiscordEvent({
+        type: 2,
+        data: { name: 'gate', options: [{ name: 'join' }] },
+      });
+      const result = await handler(event, mockContext);
+
+      const body = JSON.parse(result.body);
+      expect(body.data.flags).toBe(64);
+      expect(body.data.embeds[0].description).toContain('Private session');
+    });
+
+    test('join is public in a normal session', async () => {
+      getMockGetSessionPrivate().mockResolvedValue(false);
+      getMockGetFastServerStatus().mockResolvedValue({ status: 'running', publicIp: '54.0.0.1' });
+      getMockGetServerLive().mockResolvedValue(true);
+      getMockSsmSend().mockResolvedValue({ Parameter: undefined });
+      const event = createDiscordEvent({
+        type: 2,
+        data: { name: 'gate', options: [{ name: 'join' }] },
+      });
+      const result = await handler(event, mockContext);
+
+      expect(JSON.parse(result.body).data.flags).toBeUndefined();
+    });
+
+    test('open on a private running session clears the flag and is ephemeral', async () => {
+      getMockGetSessionPrivate().mockResolvedValue(true);
+      getMockGetServerLive().mockResolvedValue(false); // still booting -> host will announce
+      getMockGetFastServerStatus().mockResolvedValue({ status: 'running', publicIp: '54.0.0.1' });
+      getMockSsmSend().mockReset();
+      getMockSsmSend().mockResolvedValue({});
+      const event = createDiscordEvent({
+        type: 2,
+        data: { name: 'gate', options: [{ name: 'open' }] },
+      });
+      const result = await handler(event, mockContext);
+
+      const body = JSON.parse(result.body);
+      expect(body.data.flags).toBe(64);
+      const wrote = getMockSsmSend().mock.calls.find(
+        (c: any) => c[0]?.input?.Name?.includes('session-private'),
+      );
+      expect(wrote[0].input.Value).toBe('false');
+    });
+
+    test('open on an already-public session is a no-op reply', async () => {
+      getMockGetSessionPrivate().mockResolvedValue(false);
+      getMockGetFastServerStatus().mockResolvedValue({ status: 'running', publicIp: '54.0.0.1' });
+      getMockSsmSend().mockReset();
+      getMockSsmSend().mockResolvedValue({});
+      const event = createDiscordEvent({
+        type: 2,
+        data: { name: 'gate', options: [{ name: 'open' }] },
+      });
+      const result = await handler(event, mockContext);
+
+      expect(JSON.parse(result.body).data.embeds[0].title).toContain('Already public');
+      // Did not flip the flag.
+      const wrote = getMockSsmSend().mock.calls.find(
+        (c: any) => c[0]?.input?.Name?.includes('session-private'),
+      );
+      expect(wrote).toBeUndefined();
     });
   });
 
