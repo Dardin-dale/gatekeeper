@@ -144,7 +144,9 @@ export async function handleStopCommand(guildId?: string, force: boolean = false
             description: '**Shutdown sequence initiated:**\n' +
                         '💾 Creating backup...\n' +
                         '🔄 Server will stop after backup completes\n\n' +
-                        '💡 You\'ll receive notifications as the shutdown progresses',
+                        (priv
+                          ? '💡 Private session — no shutdown updates are posted; the bot just goes offline when it\'s done'
+                          : '💡 You\'ll receive notifications as the shutdown progresses'),
             color: 0xff6600,
             footer: { text: personaFooter(`Use "${slash} stop force" to skip backup`) }
           }]

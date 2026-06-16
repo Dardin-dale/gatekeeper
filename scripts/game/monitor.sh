@@ -378,7 +378,7 @@ while true; do
         # `/<cmd> join`). post_status captures the id so the lifecycle still edits
         # this one message (cue -> Offline). "Private" here is quiet, not locked —
         # anyone in the channel could /join; true lockout needs a separate world.
-        notify_enabled online && post_status "🔒 Private Session Live" "A private session is up — run \`${SLASH_CMD} join\` for the address (details stay private). The bot's *Playing…* status (with player count) also shows whenever it's live." 10181046
+        notify_enabled online && post_status "🔒 Private Session Live" "Run \`${SLASH_CMD} join\` when the bot's status shows it's playing the game. The join address is never posted to the channel. Make the game public with \`${SLASH_CMD} open\`." 10181046
       else
         # post_status captures the message id so the offline lambda edits THIS
         # message into the offline state (one message, Online -> Offline).
