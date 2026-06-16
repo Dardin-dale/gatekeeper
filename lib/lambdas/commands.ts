@@ -112,10 +112,8 @@ export async function handler(
       switch (subName) {
         case "hail":
           return await handleHailCommand();
-        case "join": {
-          const isPrivate = subOptions?.find((o: any) => o.name === "private")?.value || false;
-          return await handleJoinCommand(isPrivate);
-        }
+        case "join":
+          return await handleJoinCommand();
         case "mods": {
           const worldName = subOptions?.find((o: any) => o.name === "world")?.value;
           return await handleModsCommand(worldName, guild_id);
@@ -154,16 +152,14 @@ export async function handler(
         case "start": {
           const worldName = subOptions?.find((o: any) => o.name === "world")?.value;
           const isPrivate = subOptions?.find((o: any) => o.name === "private")?.value || false;
-          return await handleStartCommand(worldName, guild_id, isPrivate);
+          return await handleStartCommand(worldName, guild_id, isPrivate, body);
         }
         case "stop": {
           const force = subOptions?.find((o: any) => o.name === "force")?.value || false;
           return await handleStopCommand(guild_id, force);
         }
-        case "status": {
-          const isPrivate = subOptions?.find((o: any) => o.name === "private")?.value || false;
-          return await handleStatusCommand(isPrivate);
-        }
+        case "status":
+          return await handleStatusCommand();
         case "open":
           return await handleOpenCommand(guild_id);
         case "backup":

@@ -42,17 +42,17 @@ import { personaEmbed, slash } from "./util/persona";
 import { buildJoinFields, joinHost } from "./util/join-info";
 import { getScheduledOpening } from "./schedule";
 
-export async function handleStatusCommand(privateFlag = false): Promise<APIGatewayProxyResult> {
+export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
   try {
     console.log(`Getting server status details`);
 
     const { status, message: fastMessage, launchTime, publicIp } = await getFastServerStatus();
     console.log(`Server status retrieved: ${status}`);
 
-    // Reply visibility auto-follows the session (or a manual private:True),
-    // so a private game's status — including join details — stays off-channel.
+    // Reply visibility auto-follows the session, so a private game's status —
+    // including join details — stays off-channel.
     const sessionPrivate = await getSessionPrivate();
-    const ephemeral = privateFlag || sessionPrivate;
+    const ephemeral = sessionPrivate;
 
     // Try to get the active world and player count from SSM. Abiotic Factor is
     // address-based (no join code); player count comes from the on-host A2S monitor.

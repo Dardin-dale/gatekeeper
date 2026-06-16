@@ -347,6 +347,23 @@ describe('Commands Lambda', () => {
       expect(wrote[0].input.Value).toBe('true');
     });
 
+    test('private start DMs the owner (not the caller)', async () => {
+      process.env.BOT_OWNER_IDS = '111';
+      getMockGetFastServerStatus().mockResolvedValue({ status: 'stopped' });
+      getMockSsmSend().mockResolvedValue({});
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({ id: 'dm1' }) });
+      const event = createDiscordEvent({
+        type: 2,
+        member: { user: { id: '999', username: 'cufflink' } },
+        data: { name: 'gate', options: [{ name: 'start', options: [{ name: 'private', value: true }] }] },
+      });
+      await handler(event, mockContext);
+
+      // Opened a DM channel (owner 111 != caller 999) as a private heads-up.
+      const dmCall = mockFetch.mock.calls.find((c: any) => String(c[0]).includes('/users/@me/channels'));
+      expect(dmCall).toBeDefined();
+    });
+
     test('a normal start resets session-private to false', async () => {
       getMockGetFastServerStatus().mockResolvedValue({ status: 'stopped' });
       getMockSsmSend().mockReset();

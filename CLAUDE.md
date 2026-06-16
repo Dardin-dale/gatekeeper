@@ -71,19 +71,19 @@ lib/games/
 
 ## Discord commands (`/gate <sub>`)
 
-`hail` (persona ping) · `start [world] [private]` · `stop [force]` · `status [private]` · `backup`
-(archive without stopping) · `join [private]` · `open` · `worlds` · `mods [world]` ·
+`hail` (persona ping) · `start [world] [private]` · `stop [force]` · `status` · `backup`
+(archive without stopping) · `join` · `open` · `worlds` · `mods [world]` ·
 `schedule set|clear|list` · `notify set|list` (toggle host→Discord posts, SSM
 `/gatekeeper/<game>/notify/<category>`) · `config show|set` (owner-only spend timers, gated by
 `BOT_OWNER_IDS`) · `setup` · `help`.
 Dispatch lives in `lib/lambdas/commands.ts`; each subcommand is a handler in `lib/lambdas/commands/`.
 
 **Private (quiet) sessions**: `start private:True` sets SSM `session-private=true` (per-start, so a
-normal start resets it). The host monitor then skips the public "Server Online" broadcast, and
-`join`/`status` reply ephemerally (auto-following the session, or via their own `private:True`),
-each marked 🔒. `open` flips the flag off and announces the join details to the channel — posting the
-embed itself if the game is already live (the host's ping was skipped), or letting the host's normal
-readiness ping fire if it's still booting.
+normal start resets it) and DMs the owner(s) a heads-up (cost/oversight; skips the caller). The host
+monitor then skips the public "Server Online" broadcast, and `join`/`status` reply ephemerally
+(auto-following the session), each marked 🔒. `open` flips the flag off and announces the join
+details to the channel — posting the embed itself if the game is already live (the host's ping was
+skipped), or letting the host's normal readiness ping fire if it's still booting.
 Scheduled openings use EventBridge Scheduler (one-time schedules in a per-game group) firing
 `lib/lambdas/scheduler.ts`, which pre-warms the instance `prewarm-minutes` (SSM, default 10)
 before the announced time and posts T-60/T-10 countdown webhooks. Input times parse in

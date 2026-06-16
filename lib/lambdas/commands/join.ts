@@ -11,14 +11,14 @@ import { buildJoinFields, joinHost, joinHint } from "./util/join-info";
  * (address/port/password/lobby code) is shared with /gate status via
  * util/join-info so both always show the same per-game format.
  *
- * Reply visibility auto-follows the session: during a private session (or when
- * the caller passes private:True), the reply is ephemeral so the join details
- * stay off the channel — that's how friends join a quiet session.
+ * Reply visibility auto-follows the session: during a private session the reply
+ * is ephemeral so the join details stay off the channel — that's how friends
+ * join a quiet session. Public sessions reply publicly as usual.
  */
-export async function handleJoinCommand(privateFlag = false): Promise<APIGatewayProxyResult> {
+export async function handleJoinCommand(): Promise<APIGatewayProxyResult> {
   const join = ACTIVE_GAME.join;
   const sessionPrivate = await getSessionPrivate();
-  const ephemeral = privateFlag || sessionPrivate;
+  const ephemeral = sessionPrivate;
 
   const respond = (data: Record<string, unknown>): APIGatewayProxyResult => ({
     statusCode: 200,

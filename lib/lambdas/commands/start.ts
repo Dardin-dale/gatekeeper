@@ -36,8 +36,11 @@ import {
 import { sendFollowUpMessage } from "../utils/discord-followup";
 import { InteractionResponseType } from "./types";
 import { persona, personaFooter, slash } from "./util/persona";
+import { ACTIVE_GAME } from "../../games";
+import { ownerIds, callerId } from "./util/owner";
+import { dmOwners } from "./util/discord-dm";
 
-export async function handleStartCommand(worldName?: string, guildId?: string, isPrivate = false): Promise<APIGatewayProxyResult> {
+export async function handleStartCommand(worldName?: string, guildId?: string, isPrivate = false, interaction?: any): Promise<APIGatewayProxyResult> {
   try {
     console.log(`Starting server command - worldName: ${worldName}, guildId: ${guildId}, private: ${isPrivate}`);
 
@@ -194,6 +197,26 @@ export async function handleStartCommand(worldName?: string, guildId?: string, i
     console.log(`EC2 instance start command sent successfully`);
 
     const displayWorldName = selectedWorldConfig ? selectedWorldConfig.name : undefined;
+
+    // Private start → quietly DM the owner(s) for cost/oversight awareness (the
+    // session makes no public noise). Best-effort; skips the caller, who already
+    // got the ephemeral reply. Normal public starts don't ping (the readiness
+    // broadcast already tells the channel).
+    if (isPrivate) {
+      const starter = interaction?.member?.user ?? interaction?.user;
+      const starterName = starter?.username ? `@${starter.username}` : "Someone";
+      void dmOwners(ownerIds(), callerId(interaction), {
+        embeds: [{
+          title: "🔒 Private session starting",
+          description:
+            `${starterName} started a private **${ACTIVE_GAME.displayName}** session` +
+            `${displayWorldName ? ` (world: **${displayWorldName}**)` : ""}.\n` +
+            `No public announcement — it won't appear in the channel. ` +
+            `Use \`${slash} join\` for the address once it's live.`,
+          color: 0x39a0a0,
+        }],
+      });
+    }
 
     // Private start: no public readiness ping, so tell the starter how friends
     // get in (each runs `/<cmd> join` for private details), and keep this very
