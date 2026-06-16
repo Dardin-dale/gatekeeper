@@ -1,10 +1,19 @@
 import { EventBridgeEvent, Context } from 'aws-lambda';
 import { SSMClient, GetParameterCommand, PutParameterCommand } from '@aws-sdk/client-ssm';
+import { SchedulerClient, CreateScheduleCommand } from '@aws-sdk/client-scheduler';
 import { persona, personaEmbed, personaAvatarUrl, slash } from './commands/util/persona';
 import { ACTIVE_GAME } from '../games';
 
 // Create AWS clients
 const ssmClient = new SSMClient();
+const schedulerClient = new SchedulerClient({});
+
+// EventBridge Scheduler wiring (shared with the openings feature): a one-off
+// schedule in the per-game group fires the scheduler Lambda to delete a message.
+const SCHEDULER_GROUP = process.env.SCHEDULER_GROUP || '';
+const SCHEDULER_TARGET_ARN = process.env.SCHEDULER_TARGET_ARN || '';
+const SCHEDULER_ROLE_ARN = process.env.SCHEDULER_ROLE_ARN || '';
+const MESSAGE_TTL_HOURS_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/message-ttl-hours`;
 
 // SSM Parameter names (scoped to the active game's subtree)
 const ACTIVE_WORLD_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/active-world`;
@@ -38,6 +47,65 @@ async function getStatusMessageId(): Promise<string | undefined> {
     return v && v !== 'none' ? v : undefined;
   } catch {
     return undefined;
+  }
+}
+
+/** Auto-delete TTL in hours (0 = off/unset/invalid → keep the message forever). */
+async function getMessageTtlHours(): Promise<number> {
+  try {
+    const r = await ssmClient.send(new GetParameterCommand({ Name: MESSAGE_TTL_HOURS_PARAM }));
+    const v = r.Parameter?.Value;
+    if (!v || v === 'off' || v === 'disabled') return 0;
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** The active world's guild id — passed into the delete schedule so it resolves
+ *  the right webhook when it fires (active-world could change before then). */
+async function getActiveGuildId(): Promise<string | undefined> {
+  try {
+    const r = await ssmClient.send(new GetParameterCommand({ Name: ACTIVE_WORLD_PARAM }));
+    return r.Parameter?.Value ? JSON.parse(r.Parameter.Value).discordServerId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Schedule this session's status message to auto-delete `message-ttl-hours` after
+ * it goes offline — a one-off EventBridge schedule firing the scheduler Lambda's
+ * delete-message action (self-cleaning). Best-effort; never blocks the offline post.
+ */
+async function scheduleStatusMessageDeletion(messageId: string): Promise<void> {
+  const ttlHours = await getMessageTtlHours();
+  if (ttlHours <= 0) { console.log('Message TTL off; not scheduling deletion'); return; }
+  if (!SCHEDULER_GROUP || !SCHEDULER_TARGET_ARN || !SCHEDULER_ROLE_ARN) {
+    console.log('Scheduler not configured; skipping TTL deletion'); return;
+  }
+  const guildId = await getActiveGuildId();
+  if (!guildId) { console.log('No guild resolved; skipping TTL deletion'); return; }
+  const fireAt = new Date(Date.now() + ttlHours * 3_600_000).toISOString().slice(0, 19);
+  try {
+    await schedulerClient.send(new CreateScheduleCommand({
+      Name: `delete-msg-${messageId}`,
+      GroupName: SCHEDULER_GROUP,
+      ScheduleExpression: `at(${fireAt})`,
+      ScheduleExpressionTimezone: 'UTC',
+      FlexibleTimeWindow: { Mode: 'OFF' },
+      ActionAfterCompletion: 'DELETE',
+      Target: {
+        Arn: SCHEDULER_TARGET_ARN,
+        RoleArn: SCHEDULER_ROLE_ARN,
+        Input: JSON.stringify({ action: 'delete-message', messageId, guildId }),
+        RetryPolicy: { MaximumRetryAttempts: 3, MaximumEventAgeInSeconds: 300 },
+      },
+    }));
+    console.log(`Scheduled status message ${messageId} to auto-delete in ${ttlHours}h`);
+  } catch (err) {
+    console.error('Failed to schedule message deletion:', err);
   }
 }
 
@@ -163,6 +231,9 @@ export async function handler(
         throw new Error(`Discord webhook returned ${response.status}`);
       }
       console.log(`Discord notification sent successfully for ${eventType}`);
+      // The offline message IS this session's status message — schedule it to
+      // auto-delete after the TTL so the channel doesn't accrete old sessions.
+      if (statusMessageId) await scheduleStatusMessageDeletion(statusMessageId);
     } catch (error) {
       // Don't fail the Lambda just because the Discord post failed.
       console.error('Failed to send Discord notification:', error);

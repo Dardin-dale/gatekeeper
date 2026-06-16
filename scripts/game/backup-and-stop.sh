@@ -22,7 +22,7 @@ INSTANCE_ID=$(imds instance-id)
 [ -z "$REGION" ] || [ -z "$INSTANCE_ID" ] && { log "ERROR: could not read instance metadata"; exit 1; }
 
 log "Backup-and-stop sequence starting"
-if /usr/local/bin/backup-server.sh; then
+if /usr/local/bin/backup-server.sh --shutdown; then
   log "Backup complete"
 else
   log "WARNING: backup failed; stopping anyway (data persists on the RETAIN'd EBS volume)"

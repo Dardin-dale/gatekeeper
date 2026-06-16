@@ -125,6 +125,14 @@ export interface GameProfile {
    * runtime. Default 45 (first boot pulls several GB; later boots are fast).
    */
   bootTimeoutMinutes?: number | 'off';
+  /**
+   * Hours after a session ends before its lifecycle status message auto-deletes
+   * from the channel (keeps the channel from accreting stale session posts). A
+   * number, or 'off' to keep messages forever. Seeds SSM
+   * `/gatekeeper/<game>/message-ttl-hours`; `.env` MESSAGE_TTL_HOURS overrides;
+   * `cli config set message-ttl <hours|off>` retunes at runtime. Default 16.
+   */
+  messageTtlHours?: number | 'off';
 
   /**
    * How players connect / how the bot reports "how to join". This is the one

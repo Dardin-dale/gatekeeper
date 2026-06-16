@@ -28,15 +28,29 @@ const SERVER_INSTANCE_ID = process.env.SERVER_INSTANCE_ID || '';
 const SSM_PREFIX = `/gatekeeper/${ACTIVE_GAME.id}`;
 
 export interface ScheduleFireEvent {
-  action: 'start' | 'countdown';
-  opensAtEpoch: number;       // the ANNOUNCED opening (not the pre-warm instant)
-  guildId?: string;           // for webhook resolution (countdown posts)
+  action: 'start' | 'countdown' | 'delete-message';
+  opensAtEpoch?: number;      // the ANNOUNCED opening (not the pre-warm instant); unused by delete-message
+  guildId?: string;           // for webhook resolution (countdown posts, message delete)
   world?: WorldConfig | null; // resolved when the schedule was created
   minutesBefore?: number;     // countdown label (60, 10)
+  messageId?: string;         // delete-message: the webhook message to remove
 }
 
 export async function handler(event: ScheduleFireEvent): Promise<void> {
   console.log('Schedule fired:', JSON.stringify({ ...event, world: event.world?.name }));
+
+  // TTL cleanup: delete a session's lifecycle status message N hours after it
+  // went offline (scheduled by the offline-notification Lambda). Self-cleaning
+  // schedule (ActionAfterCompletion=DELETE). 404 = already gone, fine.
+  if (event.action === 'delete-message') {
+    if (!event.messageId) return;
+    const url = await getWebhookUrl(event.guildId);
+    if (!url) { console.log('No webhook; cannot delete message'); return; }
+    const res = await fetch(`${url}/messages/${event.messageId}`, { method: 'DELETE' });
+    if (!res.ok && res.status !== 404) console.error(`Message delete failed: ${res.status}`);
+    else console.log(`Deleted status message ${event.messageId} (TTL)`);
+    return;
+  }
 
   if (event.action === 'start') {
     if (event.world) {
@@ -52,7 +66,7 @@ export async function handler(event: ScheduleFireEvent): Promise<void> {
     // No-op if already running — someone starting early never breaks the schedule.
     await ec2Client.send(new StartInstancesCommand({ InstanceIds: [SERVER_INSTANCE_ID] }));
     console.log(`Instance ${SERVER_INSTANCE_ID} start requested (scheduled opening ` +
-      `at ${new Date(event.opensAtEpoch).toISOString()})`);
+      `at ${new Date(event.opensAtEpoch!).toISOString()})`);
     return;
   }
 
@@ -62,7 +76,7 @@ export async function handler(event: ScheduleFireEvent): Promise<void> {
       console.log('No webhook configured; skipping countdown post');
       return;
     }
-    const t = Math.floor(event.opensAtEpoch / 1000);
+    const t = Math.floor(event.opensAtEpoch! / 1000);
     // Persona flavor leads; the operational line below it carries the facts.
     const flavor = pickLine(
       persona.lines?.countdown,

@@ -598,6 +598,17 @@ EOF`,
             description: "Minutes to wait for first liveness before stopping a failed boot (or 'off')",
         });
 
+        // Channel hygiene: hours after a session goes offline before its status
+        // message auto-deletes. Profile default, MESSAGE_TTL_HOURS (.env) overrides,
+        // `cli config set message-ttl` retunes live. 'off' keeps messages forever.
+        const messageTtlHours =
+            process.env.MESSAGE_TTL_HOURS || String(ACTIVE_GAME.messageTtlHours ?? 16);
+        new StringParameter(this, "MessageTtlParam", {
+            parameterName: `/gatekeeper/${ACTIVE_GAME.id}/message-ttl-hours`,
+            stringValue: messageTtlHours,
+            description: "Hours before a session's status message auto-deletes (or 'off' to keep)",
+        });
+
         // Cost guardrail: an AWS Budget that emails when monthly spend trends past a
         // threshold. Region-agnostic (unlike a CloudWatch billing alarm) and $0.
         // Opt-in via .env: set BILLING_ALERT_EMAIL (and optionally BILLING_BUDGET_USD,
@@ -944,6 +955,26 @@ EOF`,
             resources: [
                 `arn:aws:ssm:${this.region}:${this.account}:parameter/gatekeeper/${ACTIVE_GAME.id}/*`
             ],
+        }));
+
+        // Message TTL: on the stopped event this Lambda schedules a one-off delete
+        // (the scheduler Lambda's delete-message action) for the session's status
+        // message. Same Scheduler group/role/target as the openings feature.
+        discordNotificationsFunction.addEnvironment("SCHEDULER_GROUP", scheduleGroup.name!);
+        discordNotificationsFunction.addEnvironment("SCHEDULER_TARGET_ARN", schedulerFunction.functionArn);
+        discordNotificationsFunction.addEnvironment("SCHEDULER_ROLE_ARN", schedulerInvokeRole.roleArn);
+        discordNotificationsFunction.addToRolePolicy(new PolicyStatement({
+            actions: ["scheduler:CreateSchedule"],
+            resources: [
+                `arn:aws:scheduler:${this.region}:${this.account}:schedule/${scheduleGroup.name}/*`
+            ],
+        }));
+        discordNotificationsFunction.addToRolePolicy(new PolicyStatement({
+            actions: ["iam:PassRole"],
+            resources: [schedulerInvokeRole.roleArn],
+            conditions: {
+                StringEquals: { "iam:PassedToService": "scheduler.amazonaws.com" },
+            },
         }));
 
         // Readiness + idle/backup messages are posted directly to the webhook by

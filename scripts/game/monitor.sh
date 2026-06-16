@@ -438,7 +438,7 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
           post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904
         fi
       fi
-      /usr/local/bin/backup-server.sh || log "WARNING: backup failed; stopping anyway (data persists on EBS)"
+      /usr/local/bin/backup-server.sh --shutdown || log "WARNING: backup failed; stopping anyway (data persists on EBS)"
       invalidate_session_params
       aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region "$REGION"
       break

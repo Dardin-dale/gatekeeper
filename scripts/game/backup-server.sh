@@ -19,6 +19,13 @@ set -euo pipefail
 PROFILE=/etc/gatekeeper/game-profile.json
 CONF=/etc/gatekeeper.conf
 
+# --shutdown: this backup is part of a session winding down (idle/stop), so the
+# "Backup Complete" post is suppressed — the edit-in-place status message already
+# shows winding-down → offline. Manual `cli backup`/`/<cmd> backup` (no flag)
+# still confirms, since the server stays up and there's no status message to cover it.
+SHUTDOWN_CONTEXT=0
+[ "${1:-}" = "--shutdown" ] && SHUTDOWN_CONTEXT=1
+
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"; }
 
 # IMDSv2-aware metadata fetch (AL2023 enforces token auth; works on optional too).
@@ -106,7 +113,7 @@ rm -f "$ARCHIVE"
 log "Backup complete: $DEST"
 # `if` (not `&&`) so a silenced category's non-zero exit doesn't trip set -e and
 # make this script report a false backup failure to its caller (the monitor).
-if notify_enabled backup && ! session_private; then
+if notify_enabled backup && ! session_private && [ "$SHUTDOWN_CONTEXT" != "1" ]; then
   post_discord "💾 Backup Complete" "World data archived safely — \`${TS}.tar.gz\` (${SIZE}).
 Everyone's progress is saved." 3776160
 fi

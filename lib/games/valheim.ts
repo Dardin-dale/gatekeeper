@@ -67,6 +67,7 @@ export const valheim: GameProfile = {
   dataVolumeSizeGb: 12,
   autoShutdownMinutes: 15, // idle-stop after 15 min with no players (cost control)
   bootTimeoutMinutes: 45,  // generous: first boot SteamCMD-pulls the server image
+  messageTtlHours: 16,     // session status message auto-deletes 16h after offline
 
   // ⚠️ With -crossplay (our worlds use it) Valheim switches to PlayFab
   // networking and does NOT answer A2S on 2457 — verified live on the first

@@ -42,6 +42,7 @@ export const templateGame: GameProfile = {
   dataVolumeSizeGb: 12,
   autoShutdownMinutes: 15, // idle-stop after N min with no players (cost control); 'off' to disable
   bootTimeoutMinutes: 45,  // stop a wedged boot after N min so it can't bill forever; 'off' to disable
+  messageTtlHours: 16,     // auto-delete a session's status message N hours after it goes offline; 'off' to keep
 
   // address (IP:port) for most games, or { type: 'join-code', logPattern } for crossplay codes.
   join: { type: 'address', port: 0 }, // TODO real join port

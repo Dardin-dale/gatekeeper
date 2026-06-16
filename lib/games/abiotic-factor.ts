@@ -89,6 +89,7 @@ export const abioticFactor: GameProfile = {
   dataVolumeSizeGb: 20, // SteamCMD pulls several GB for AF
   autoShutdownMinutes: 15, // idle-stop after 15 min with no players (cost control)
   bootTimeoutMinutes: 45,  // generous: first boot SteamCMD-pulls several GB
+  messageTtlHours: 16,     // session status message auto-deletes 16h after offline
 
   join: {
     type: 'address',

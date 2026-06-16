@@ -13,6 +13,20 @@ jest.mock('@aws-sdk/client-ssm', () => {
       input,
       constructor: { name: 'GetParameterCommand' },
     })),
+    PutParameterCommand: jest.fn().mockImplementation((input: any) => ({
+      input,
+      constructor: { name: 'PutParameterCommand' },
+    })),
+  };
+});
+
+// Mock the EventBridge Scheduler client used for TTL message deletion.
+jest.mock('@aws-sdk/client-scheduler', () => {
+  const mockSend = jest.fn();
+  (global as any).__mockSchedulerSend = mockSend;
+  return {
+    SchedulerClient: jest.fn().mockImplementation(() => ({ send: mockSend })),
+    CreateScheduleCommand: jest.fn().mockImplementation((input: any) => ({ input })),
   };
 });
 
@@ -24,6 +38,12 @@ global.fetch = mockFetch as any;
 // Get references to the actual mocks
 const getMockSsmSend = () => (global as any).__mockSsmSend as jest.Mock;
 const getMockFetch = () => (global as any).__mockFetch as jest.Mock;
+const getMockSchedulerSend = () => (global as any).__mockSchedulerSend as jest.Mock;
+
+// Scheduler env is read at module load — set it BEFORE importing the handler.
+process.env.SCHEDULER_GROUP = 'gatekeeper-abiotic-factor';
+process.env.SCHEDULER_TARGET_ARN = 'arn:aws:lambda:us-west-2:123:function:scheduler';
+process.env.SCHEDULER_ROLE_ARN = 'arn:aws:iam::123:role/sched';
 
 // Import after mocking
 import { handler } from '../../lib/lambdas/discord-notifications';
@@ -82,6 +102,8 @@ describe('Discord Notifications Lambda', () => {
   beforeEach(() => {
     getMockSsmSend().mockReset();
     getMockFetch().mockReset();
+    getMockSchedulerSend().mockReset();
+    getMockSchedulerSend().mockResolvedValue({});
     getMockFetch().mockResolvedValue({ ok: true, status: 204 });
     getMockSsmSend().mockRejectedValue({ name: 'ParameterNotFound' });
   });
@@ -150,6 +172,37 @@ describe('Discord Notifications Lambda', () => {
       const editCall = getMockFetch().mock.calls.find((c: any) => String(c[0]).includes('/messages/msg-123'));
       expect(editCall).toBeDefined();
       expect(editCall[1].method).toBe('PATCH');
+    });
+
+    test('schedules the status message to auto-delete after the TTL', async () => {
+      getMockSsmSend().mockImplementation((command: any) => {
+        const name = command.input?.Name;
+        if (name === '/gatekeeper/abiotic-factor/status-message-id') return Promise.resolve({ Parameter: { Value: 'msg-123' } });
+        if (name === '/gatekeeper/abiotic-factor/message-ttl-hours') return Promise.resolve({ Parameter: { Value: '16' } });
+        if (name === '/gatekeeper/abiotic-factor/active-world') return Promise.resolve({ Parameter: { Value: JSON.stringify({ discordServerId: 'test-guild-123' }) } });
+        if (name === '/gatekeeper/abiotic-factor/discord-webhook/test-guild-123') return Promise.resolve({ Parameter: { Value: 'https://discord.com/api/webhooks/123/abc' } });
+        return Promise.resolve({});
+      });
+      await handler(stoppedEvent(), mockContext);
+
+      expect(getMockSchedulerSend()).toHaveBeenCalled();
+      const input = getMockSchedulerSend().mock.calls[0][0].input;
+      expect(input.Name).toBe('delete-msg-msg-123');
+      expect(JSON.parse(input.Target.Input)).toMatchObject({ action: 'delete-message', messageId: 'msg-123', guildId: 'test-guild-123' });
+    });
+
+    test('does not schedule a delete when TTL is off', async () => {
+      getMockSsmSend().mockImplementation((command: any) => {
+        const name = command.input?.Name;
+        if (name === '/gatekeeper/abiotic-factor/status-message-id') return Promise.resolve({ Parameter: { Value: 'msg-123' } });
+        if (name === '/gatekeeper/abiotic-factor/message-ttl-hours') return Promise.resolve({ Parameter: { Value: 'off' } });
+        if (name === '/gatekeeper/abiotic-factor/active-world') return Promise.resolve({ Parameter: { Value: JSON.stringify({ discordServerId: 'test-guild-123' }) } });
+        if (name === '/gatekeeper/abiotic-factor/discord-webhook/test-guild-123') return Promise.resolve({ Parameter: { Value: 'https://discord.com/api/webhooks/123/abc' } });
+        return Promise.resolve({});
+      });
+      await handler(stoppedEvent(), mockContext);
+
+      expect(getMockSchedulerSend()).not.toHaveBeenCalled();
     });
 
     test('suppresses the offline post when the session was private', async () => {

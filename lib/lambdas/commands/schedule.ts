@@ -210,7 +210,7 @@ export async function getScheduledOpening(): Promise<
     const input = schedule.Target?.Input;
     if (!input) return undefined;
     const payload = JSON.parse(input) as ScheduleFireEvent;
-    return { opensAtEpoch: payload.opensAtEpoch, worldName: payload.world?.name };
+    return { opensAtEpoch: payload.opensAtEpoch ?? 0, worldName: payload.world?.name };
   } catch (err) {
     return undefined; // ResourceNotFound = nothing scheduled
   }
