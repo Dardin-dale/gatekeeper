@@ -94,15 +94,17 @@ put_param() { # $1 = name, $2 = value (best-effort)
 invalidate_session_params() {
   put_param "$JOIN_CODE_PARAM" "none"
   put_param "$SERVER_LIVE_PARAM" "false"
-  # Drop last session's readiness message id so this session's offline edit can't
-  # target a stale message (and a suppressed/private online leaves it 'none').
-  put_param "$STATUS_MSG_PARAM" "none"
 }
 
 # Fresh session: clear edge/idle state so stale files can't trigger an instant shutdown.
 rm -f "$SEEN_LIVE_FLAG" "$LIVE_STATE_FILE"
 date +%s > "$ACTIVITY_FILE"
 invalidate_session_params
+# Drop LAST session's readiness message id at startup ONLY (not in
+# invalidate_session_params, which also runs pre-stop — clearing it there would
+# wipe the id before the offline lambda can edit this session's message). This
+# session's post_status overwrites it; a suppressed/private online leaves 'none'.
+put_param "$STATUS_MSG_PARAM" "none"
 MISS_COUNT=0          # consecutive failed liveness checks (for down-debounce)
 LAST_PLAYERS=0        # last good player count (held through a debounced blip)
 PUBLISHED_JOIN_CODE="" # join code currently in SSM (rewrite only on change)
@@ -174,6 +176,21 @@ post_status() { # $1 = title, $2 = description, $3 = color, $4 = optional JSON f
   resp=$(curl -s -m 10 -H "Content-Type: application/json" -X POST "${url}?wait=true" -d "$payload" 2>/dev/null)
   id=$(echo "$resp" | jq -r '.id // empty' 2>/dev/null)
   if [ -n "$id" ]; then put_param "$STATUS_MSG_PARAM" "$id"; else log "WARNING: readiness post failed (no message id captured)"; fi
+}
+
+# Edit this session's status message in place (Online -> winding down -> Offline).
+# Returns non-zero when there's no message to edit (online was suppressed/off), so
+# callers can fall back to a fresh post. Editing is silent (no re-ping).
+edit_status() { # $1 = title, $2 = description, $3 = color, $4 = optional JSON fields array
+  local url id payload
+  id=$(aws ssm get-parameter --name "$STATUS_MSG_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "none")
+  if [ -z "$id" ] || [ "$id" = "none" ]; then return 1; fi
+  url=$(get_webhook_url) || return 1
+  if [ -z "$url" ] || [ "$url" = "None" ]; then return 1; fi
+  payload=$(build_payload "$1" "$2" "$3" "${4:-[]}")
+  curl -s -m 10 -H "Content-Type: application/json" -X PATCH "${url}/messages/${id}" -d "$payload" > /dev/null 2>&1 \
+    || log "WARNING: status message edit failed"
+  return 0
 }
 
 # Dedup key for an event line: collapse the lloesche/Valheim "Console: [Info :
@@ -411,8 +428,15 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
       # Private session stays quiet on the way down too (read fresh: /<cmd> open
       # may have flipped it public mid-session).
       IDLE_PRIVATE=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
-      if [ "$IDLE_PRIVATE" != "true" ] && notify_enabled idle; then
-        post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904
+      if [ "$IDLE_PRIVATE" != "true" ]; then
+        # Edit the live status message into the winding-down state (one message:
+        # Online -> winding down -> Offline). If there's no message to edit (online
+        # was off), fall back to a standalone idle notice when that's enabled.
+        if edit_status "💤 Winding Down" "No players for ${AUTO_SHUTDOWN} min — backing up and shutting down." 16763904; then
+          log "Edited status message to winding-down"
+        elif notify_enabled idle; then
+          post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904
+        fi
       fi
       /usr/local/bin/backup-server.sh || log "WARNING: backup failed; stopping anyway (data persists on EBS)"
       invalidate_session_params
