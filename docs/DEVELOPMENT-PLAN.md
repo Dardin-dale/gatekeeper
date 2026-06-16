@@ -274,34 +274,44 @@ opening (probably yes, cheap); `register-commands` + persona lines for countdown
       icon avatar (shared `personaAvatarUrl`); the readiness ping states the idle auto-shutoff; the
       boot-timeout message uses the per-game `$SLASH_CMD` (was hardcoded `/gate`, wrong on Valheim).
 - [x] **Private (quiet) sessions** — `/gate start private` sets SSM `session-private` (per-start; reset
-      to public on stop), DMs the owner a heads-up (true DM, skips the caller), suppresses the public
-      readiness/idle/backup/offline posts, and makes `join`/`status` reply ephemerally (🔒). **`/gate
-      open`** flips a running private session public and announces the join details (posts itself if
-      already live, else lets the host's normal ping fire).
-- [x] **Edit-in-place (Option A)** — a session's running lifecycle is ONE webhook message edited in
-      place: **🟢 Online → 💤 Winding Down → 🛑 Offline**. Host posts with `?wait=true` + stores
-      `status-message-id`; idle edits it; the offline Lambda PATCHes it (fallback to a fresh post).
-      `/gate open`'s announcement captures the id too. Backup-complete stays a separate post (→ TTL
-      auto-delete, below).
+      to public on stop) and DMs the owner a heads-up (true DM, skips the caller). **"Private" is quiet,
+      not access-locked** (anyone in the channel could still `/join`; true lockout would need a separate
+      world). Discoverability model (landed after iterating): instead of full silence, a **minimal cue**
+      ("🔒 Private session — `/<cmd> join` for the address", NO details in channel) that also points at
+      the bot's **presence** ("Playing… (N online)") as the live signal — the presence "leak" is the
+      intended signal here, not a gap. Friends pull the real address/password/**code** via the ephemeral
+      `join`/`status` (🔒). **`/gate open`** flips it fully public and announces the details.
+- [x] **Join-code `/join` fix** — `/join` + `/status` now render the full per-game join set for
+      join-code games (Valheim) too, not just address games — without it a private Valheim/AF session
+      had no way to surface the code (the readiness ping is suppressed). Reads the code from SSM (the
+      host keeps scraping it in private mode).
+- [x] **Edit-in-place (Option A)** — a session's lifecycle is ONE webhook message edited in place:
+      **🟢 Online (or 🔒 private cue) → 💤 Winding Down → 🛑 Offline**. Host posts with `?wait=true` +
+      stores `status-message-id`; idle/offline edit it (silent — works in private too); `/gate open`'s
+      announcement captures the id. The redundant "Backup Complete" post is suppressed at shutdown
+      (`backup-server.sh --shutdown`); manual `/<cmd> backup` still confirms.
 
-### Phase 14 — Channel-clutter reduction (PLANNED)
-Driven by "I don't want stale messages piling up." Order: edit-in-place B → auto-delete → buttons.
-- [ ] **Edit-in-place Option B** — fold "Starting" into the single session message (Starting → Online →
-      Winding Down → Offline). Requires `/gate start` to post the lifecycle message via the **webhook**
-      (capture id) with an ephemeral ack, because "Starting" today is the interaction reply (token
-      expires ~15 min, host can't edit it). Crux: the start→host `status-message-id` handoff (drop the
-      host startup force-clear; `start` sets it, the offline Lambda clears on stop, host online becomes
-      edit-or-post for scheduler/console starts). Full plan: memory `edit-in-place-lifecycle-plan.md`.
-- [ ] **TTL auto-delete of lifecycle posts** — per-game flag (default 16h, like the timers); on post,
-      schedule a one-off EventBridge delete (reuse the scheduler group/role) → a small delete-message
-      Lambda. Scope: session lifecycle posts (online/offline/idle/backup), not chat/flavor.
-- [ ] **Status-message buttons** — Open / Stop / Extend on the live status message (we already handle
-      `MESSAGE_COMPONENT`; edit-in-place gives a persistent message to attach them to). **Extend** adds
-      time to the idle countdown via a per-game config default (5 min) — needs the monitor to honor an
-      "extend-until" signal.
-- [ ] **Presence privacy (deferred, low priority)** — the `game-presence` sidecar still shows
-      "Playing <game>" during a private session. Accepted gap: `/gate status` is unrestricted anyway, so
-      it reveals nothing status doesn't. Fix if wanted: `presence.js` reads `session-private`.
+### Phase 14 — Channel-clutter reduction (in progress)
+Driven by "I don't want stale messages piling up."
+- [x] **TTL auto-delete** (✅ DEPLOYED 2026-06-16) — a session's status message auto-deletes
+      `message-ttl-hours` after it goes offline. Per-game `messageTtlHours` (16) seeds SSM;
+      `MESSAGE_TTL_HOURS` (.env) overrides; `cli config set message-ttl <hours|off>` retunes ('off'
+      valid). The offline Lambda schedules a one-off EventBridge delete (the **scheduler Lambda gained a
+      `delete-message` action** — no new Lambda; same group/role/target as openings), guildId captured
+      into the payload. Edit-in-place collapsed the lifecycle to one message, so that's all there is to
+      delete (the redundant shutdown backup post was suppressed instead).
+- [ ] **Status-message buttons** (NEXT) — Open / Stop / Extend on the live status message. Confirmed
+      feasible: our webhook is **application-owned** (`/gate setup` creates it with the bot token), so
+      its components send working interactions to the Commands Lambda (already handles
+      `MESSAGE_COMPONENT`). **Extend** adds time to the idle countdown via a per-game config default
+      (5 min) — needs the monitor to honor an "extend-until" signal.
+- [ ] **Edit-in-place Option B (shelved)** — fold "Starting" into the single session message. Requires
+      `/gate start` to post the lifecycle message via the **webhook** (ephemeral ack) since "Starting" is
+      today the interaction reply (token expires ~15 min, host can't edit it). Crux: the start→host
+      `status-message-id` handoff. Full plan: memory `edit-in-place-lifecycle-plan.md`.
+- [~] **Presence privacy — RESOLVED BY DESIGN (won't fix).** The `game-presence` sidecar showing
+      "Playing <game> (N online)" during a private session is now the *intended* live signal — the
+      private-mode cue points at it. Not a leak; deliberately kept.
 
 ---
 
