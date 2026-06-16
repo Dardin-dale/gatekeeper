@@ -205,7 +205,25 @@ describe('Discord Notifications Lambda', () => {
       expect(getMockSchedulerSend()).not.toHaveBeenCalled();
     });
 
-    test('suppresses the offline post when the session was private', async () => {
+    test('edits the private cue to offline (private session WITH a status message)', async () => {
+      getMockSsmSend().mockImplementation((command: any) => {
+        const name = command.input?.Name;
+        if (name === '/gatekeeper/abiotic-factor/session-private') return Promise.resolve({ Parameter: { Value: 'true' } });
+        if (name === '/gatekeeper/abiotic-factor/status-message-id') return Promise.resolve({ Parameter: { Value: 'cue-77' } });
+        if (name === '/gatekeeper/abiotic-factor/message-ttl-hours') return Promise.resolve({ Parameter: { Value: 'off' } });
+        if (name === '/gatekeeper/abiotic-factor/active-world') return Promise.resolve({ Parameter: { Value: JSON.stringify({ discordServerId: 'test-guild-123' }) } });
+        if (name === '/gatekeeper/abiotic-factor/discord-webhook/test-guild-123') return Promise.resolve({ Parameter: { Value: 'https://discord.com/api/webhooks/123/abc' } });
+        return Promise.resolve({});
+      });
+      await handler(stoppedEvent(), mockContext);
+
+      // Editing the cue in place (silent) — NOT a fresh public post.
+      const editCall = getMockFetch().mock.calls.find((c: any) => String(c[0]).includes('/messages/cue-77'));
+      expect(editCall).toBeDefined();
+      expect(editCall[1].method).toBe('PATCH');
+    });
+
+    test('suppresses the offline post when private AND nothing was posted', async () => {
       getMockSsmSend().mockImplementation((command: any) => {
         if (command.input?.Name === '/gatekeeper/abiotic-factor/session-private') {
           return Promise.resolve({ Parameter: { Value: 'true' } });

@@ -373,7 +373,12 @@ while true; do
       # flips this flag off (and posts the announcement itself if already live).
       SESSION_PRIVATE=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
       if [ "$SESSION_PRIVATE" = "true" ]; then
-        log "Private session — skipping public Server Online ping"
+        # Private session: a MINIMAL cue so invited friends know to pull the
+        # details, but WITHOUT the address/password/code (those come privately via
+        # `/<cmd> join`). post_status captures the id so the lifecycle still edits
+        # this one message (cue -> Offline). "Private" here is quiet, not locked —
+        # anyone in the channel could /join; true lockout needs a separate world.
+        notify_enabled online && post_status "🔒 Private Session Live" "A private session is up — run \`${SLASH_CMD} join\` for the address (details stay private). The bot's *Playing…* status (with player count) also shows whenever it's live." 10181046
       else
         # post_status captures the message id so the offline lambda edits THIS
         # message into the offline state (one message, Online -> Offline).
@@ -425,18 +430,15 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
     log "Idle for ${IDLE}s (threshold ${THRESHOLD}s)"
     if [ "$IDLE" -gt "$THRESHOLD" ]; then
       log "Idle threshold exceeded — backing up and shutting down"
-      # Private session stays quiet on the way down too (read fresh: /<cmd> open
-      # may have flipped it public mid-session).
+      # Edit the live status message (the online ping OR the private cue) into the
+      # winding-down state — editing is silent, so this is correct in a private
+      # session too. Only fall back to a standalone idle notice (a NEW post) when
+      # the session is public AND there's no message to edit (online was off).
       IDLE_PRIVATE=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
-      if [ "$IDLE_PRIVATE" != "true" ]; then
-        # Edit the live status message into the winding-down state (one message:
-        # Online -> winding down -> Offline). If there's no message to edit (online
-        # was off), fall back to a standalone idle notice when that's enabled.
-        if edit_status "💤 Winding Down" "No players for ${AUTO_SHUTDOWN} min — backing up and shutting down." 16763904; then
-          log "Edited status message to winding-down"
-        elif notify_enabled idle; then
-          post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904
-        fi
+      if edit_status "💤 Winding Down" "No players for ${AUTO_SHUTDOWN} min — backing up and shutting down." 16763904; then
+        log "Edited status message to winding-down"
+      elif [ "$IDLE_PRIVATE" != "true" ] && notify_enabled idle; then
+        post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904
       fi
       /usr/local/bin/backup-server.sh --shutdown || log "WARNING: backup failed; stopping anyway (data persists on EBS)"
       invalidate_session_params

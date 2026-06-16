@@ -224,8 +224,9 @@ export async function handleStartCommand(worldName?: string, guildId?: string, i
     const description = isPrivate
       ? `${persona.lines?.starting ?? 'The server is powering up.'} ` +
         'First boot can take several minutes while the server provisions.\n\n' +
-        `🔒 **Private session** — no public announcement. Friends join with \`${slash} join\` ` +
-        `(replies privately). Open it to the channel anytime with \`${slash} open\`.`
+        `🔒 **Private session** — no join details are posted to the channel. When it's live, ` +
+        `a quiet cue invites friends to run \`${slash} join\` (which replies privately), and the ` +
+        `bot's *Playing…* status shows it's up. Open it fully with \`${slash} open\`.`
       : `${persona.lines?.starting ?? 'The server is powering up.'} ` +
         'First boot can take several minutes while the server provisions.\n\n' +
         'You\'ll get a notification with the join address when it\'s live.';

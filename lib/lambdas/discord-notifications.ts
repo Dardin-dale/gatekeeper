@@ -188,8 +188,12 @@ export async function handler(
           const privateSession = await wasSessionPrivate();
           statusMessageId = await getStatusMessageId();
           await invalidateSessionParams();
-          if (privateSession) {
-            console.log('Private session ended — suppressing public offline notification');
+          // Edit the session's status message (the online ping OR the private cue)
+          // into the offline state — editing is silent, so it's correct for a
+          // private session too. Only fully suppress when private AND nothing was
+          // posted (no message to edit), so we never create a fresh public post.
+          if (privateSession && !statusMessageId) {
+            console.log('Private session with no status message — nothing to post');
           } else {
             message = handleEC2StoppedEvent(event.detail);
           }
