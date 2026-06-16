@@ -12,6 +12,7 @@ const DISCORD_WEBHOOK_BASE = `/gatekeeper/${ACTIVE_GAME.id}/discord-webhook`;
 const JOIN_CODE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/join-code`;
 const SERVER_LIVE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/server-live`;
 const SESSION_PRIVATE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/session-private`;
+const STATUS_MESSAGE_ID_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/status-message-id`;
 
 /** Was the just-ended session private? Then suppress the public "offline" post. */
 async function wasSessionPrivate(): Promise<boolean> {
@@ -20,6 +21,23 @@ async function wasSessionPrivate(): Promise<boolean> {
     return r.Parameter?.Value === 'true';
   } catch {
     return false;
+  }
+}
+
+/**
+ * The id of this session's readiness ("Server Online") message, captured by the
+ * host (or /<cmd> open) when it posted. We EDIT that message into the offline
+ * state instead of posting a second one — so a session shows as one message that
+ * flips Online→Offline. 'none'/absent means nothing was posted (private or the
+ * online notice was off), so we fall back to posting fresh.
+ */
+async function getStatusMessageId(): Promise<string | undefined> {
+  try {
+    const r = await ssmClient.send(new GetParameterCommand({ Name: STATUS_MESSAGE_ID_PARAM }));
+    const v = r.Parameter?.Value;
+    return v && v !== 'none' ? v : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -33,7 +51,7 @@ async function invalidateSessionParams(): Promise<void> {
   // Also reset session-private to public: it's per-start, so clearing it on stop
   // keeps the default public — a later scheduled/normal start is never mistaken
   // for the previous private session.
-  for (const [name, value] of [[JOIN_CODE_PARAM, 'none'], [SERVER_LIVE_PARAM, 'false'], [SESSION_PRIVATE_PARAM, 'false']]) {
+  for (const [name, value] of [[JOIN_CODE_PARAM, 'none'], [SERVER_LIVE_PARAM, 'false'], [SESSION_PRIVATE_PARAM, 'false'], [STATUS_MESSAGE_ID_PARAM, 'none']]) {
     try {
       await ssmClient.send(new PutParameterCommand({
         Name: name, Value: value, Type: 'String', Overwrite: true,
@@ -94,11 +112,13 @@ export async function handler(
     console.log(`Processing event type: ${eventType}`);
 
     let message: any;
+    let statusMessageId: string | undefined; // edit this readiness message in place, if present
     switch (eventType) {
       case 'EC2 Instance State-change Notification':
         if (event.detail.state === 'stopped') {
-          // Read privacy BEFORE invalidating (which resets the flag to public).
+          // Read privacy + the status message id BEFORE invalidating (which resets both).
           const privateSession = await wasSessionPrivate();
+          statusMessageId = await getStatusMessageId();
           await invalidateSessionParams();
           if (privateSession) {
             console.log('Private session ended — suppressing public offline notification');
@@ -119,12 +139,27 @@ export async function handler(
 
     try {
       const webhookUrl = await getWebhookUrl();
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
+      // Edit the session's readiness message into the offline state when we have
+      // it (one message flips Online→Offline); otherwise post a fresh offline.
+      const url = statusMessageId ? `${webhookUrl}/messages/${statusMessageId}` : webhookUrl;
+      const response = await fetch(url, {
+        method: statusMessageId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(message),
       });
       if (!response.ok) {
+        // A deleted/expired message can't be edited — fall back to a fresh post.
+        if (statusMessageId && (response.status === 404 || response.status === 400)) {
+          console.log('Status message gone; posting a fresh offline notice');
+          const fresh = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(message),
+          });
+          if (!fresh.ok) throw new Error(`Discord webhook returned ${fresh.status}`);
+          console.log(`Discord notification sent successfully for ${eventType}`);
+          return;
+        }
         throw new Error(`Discord webhook returned ${response.status}`);
       }
       console.log(`Discord notification sent successfully for ${eventType}`);

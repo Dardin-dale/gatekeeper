@@ -74,6 +74,7 @@ export const SSM_PARAMS = {
   JOIN_CODE: `${SSM_PREFIX}/join-code`, // per-session lobby code scraped by the host monitor ('none' = absent)
   SERVER_LIVE: `${SSM_PREFIX}/server-live`, // 'true' while the game answers the host monitor's liveness checks
   SESSION_PRIVATE: `${SSM_PREFIX}/session-private`, // 'true' for a quiet session: host skips the public online ping, join/status reply privately. Set per-start, flipped off by /<cmd> open.
+  STATUS_MESSAGE_ID: `${SSM_PREFIX}/status-message-id`, // id of this session's readiness message; the offline notification edits it in place ('none' = post fresh)
   PREWARM_MINUTES: `${SSM_PREFIX}/prewarm-minutes`, // scheduled openings: start this many minutes before the announced time
   // Per-category notification toggles: /gatekeeper/<game-id>/notify/<category> = on|off
   // (read by the host post_discord; absent = on). See lib/lambdas/commands/notify.ts.

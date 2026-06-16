@@ -48,7 +48,10 @@ async function announce(guildId: string, host: string): Promise<boolean> {
     color: 0x39a0a0,
     extra: { fields: await buildJoinFields(host) },
   });
-  await fetch(webhookUrl, {
+  // ?wait=true so we get the message id back and store it — the offline
+  // notification then edits THIS announcement into the offline state, same as a
+  // host-posted readiness ping.
+  const res = await fetch(`${webhookUrl}?wait=true`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -57,7 +60,17 @@ async function announce(guildId: string, host: string): Promise<boolean> {
       embeds: [embed],
     }),
   });
-  return true;
+  if (res.ok) {
+    try {
+      const msg = await res.json();
+      if (msg?.id) {
+        await withRetry(() => ssmClient.send(new PutParameterCommand({
+          Name: SSM_PARAMS.STATUS_MESSAGE_ID, Value: String(msg.id), Type: "String", Overwrite: true,
+        })));
+      }
+    } catch { /* best-effort: id capture is non-critical */ }
+  }
+  return res.ok;
 }
 
 /**

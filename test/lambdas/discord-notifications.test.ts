@@ -131,6 +131,27 @@ describe('Discord Notifications Lambda', () => {
       expect(getMockFetch()).not.toHaveBeenCalled();
     });
 
+    test('edits the readiness message in place when a status-message-id exists', async () => {
+      getMockSsmSend().mockImplementation((command: any) => {
+        const name = command.input?.Name;
+        if (name === '/gatekeeper/abiotic-factor/status-message-id') {
+          return Promise.resolve({ Parameter: { Value: 'msg-123' } });
+        }
+        if (name === '/gatekeeper/abiotic-factor/active-world') {
+          return Promise.resolve({ Parameter: { Value: JSON.stringify({ discordServerId: 'test-guild-123' }) } });
+        }
+        if (name === '/gatekeeper/abiotic-factor/discord-webhook/test-guild-123') {
+          return Promise.resolve({ Parameter: { Value: 'https://discord.com/api/webhooks/123/abc' } });
+        }
+        return Promise.resolve({}); // session-private get, invalidation puts
+      });
+      await handler(stoppedEvent(), mockContext);
+
+      const editCall = getMockFetch().mock.calls.find((c: any) => String(c[0]).includes('/messages/msg-123'));
+      expect(editCall).toBeDefined();
+      expect(editCall[1].method).toBe('PATCH');
+    });
+
     test('suppresses the offline post when the session was private', async () => {
       getMockSsmSend().mockImplementation((command: any) => {
         if (command.input?.Name === '/gatekeeper/abiotic-factor/session-private') {

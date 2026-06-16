@@ -82,6 +82,7 @@ ACTIVE_WORLD_PARAM="/gatekeeper/${GAME_ID}/active-world"
 JOIN_CODE_PARAM="/gatekeeper/${GAME_ID}/join-code"
 SERVER_LIVE_PARAM="/gatekeeper/${GAME_ID}/server-live"
 SESSION_PRIVATE_PARAM="/gatekeeper/${GAME_ID}/session-private" # 'true' = quiet session: skip the public online ping
+STATUS_MSG_PARAM="/gatekeeper/${GAME_ID}/status-message-id"    # readiness message id; the offline lambda edits it in place
 
 put_param() { # $1 = name, $2 = value (best-effort)
   aws ssm put-parameter --name "$1" --type String --value "$2" --overwrite \
@@ -93,6 +94,9 @@ put_param() { # $1 = name, $2 = value (best-effort)
 invalidate_session_params() {
   put_param "$JOIN_CODE_PARAM" "none"
   put_param "$SERVER_LIVE_PARAM" "false"
+  # Drop last session's readiness message id so this session's offline edit can't
+  # target a stale message (and a suppressed/private online leaves it 'none').
+  put_param "$STATUS_MSG_PARAM" "none"
 }
 
 # Fresh session: clear edge/idle state so stale files can't trigger an instant shutdown.
@@ -137,12 +141,9 @@ notify_enabled() { # $1 = category
   [ "$v" != "off" ]
 }
 
-post_discord() { # $1 = title, $2 = description, $3 = color (decimal), $4 = optional JSON embed-fields array
-  local url; url=$(get_webhook_url) || { log "no webhook configured; skipping Discord post"; return 0; }
-  [ -z "$url" ] || [ "$url" = "None" ] && { log "no webhook configured; skipping Discord post"; return 0; }
-  # Build the payload with jq so the name/avatar/text are safely JSON-escaped.
-  local payload
-  payload=$(jq -n --arg name "$PERSONA_NAME" --arg icon "$PERSONA_ICON" --arg thumb "$PERSONA_THUMB" \
+# Build the webhook payload with jq so name/avatar/text are safely JSON-escaped.
+build_payload() { # $1 = title, $2 = description, $3 = color, $4 = optional JSON fields array
+  jq -n --arg name "$PERSONA_NAME" --arg icon "$PERSONA_ICON" --arg thumb "$PERSONA_THUMB" \
     --arg footer "$PERSONA_FOOTER" \
     --arg title "$1" --arg desc "$2" --argjson color "$3" --argjson fields "${4:-[]}" \
     '{username: $name, embeds: [{title: $title, description: $desc, color: $color}]}
@@ -150,9 +151,29 @@ post_discord() { # $1 = title, $2 = description, $3 = color (decimal), $4 = opti
      | if $footer != "" then .embeds[0].footer = {text: $footer} else . end
      | if ($fields | length) > 0 then .embeds[0].fields = $fields else . end
      | if $thumb != "" then .embeds[0].thumbnail = {url: $thumb} else . end
-     | if $icon != "" then .avatar_url = $icon else . end')
+     | if $icon != "" then .avatar_url = $icon else . end'
+}
+
+post_discord() { # $1 = title, $2 = description, $3 = color (decimal), $4 = optional JSON embed-fields array
+  local url payload
+  url=$(get_webhook_url) || { log "no webhook configured; skipping Discord post"; return 0; }
+  if [ -z "$url" ] || [ "$url" = "None" ]; then log "no webhook configured; skipping Discord post"; return 0; fi
+  payload=$(build_payload "$1" "$2" "$3" "${4:-[]}")
   curl -s -m 10 -H "Content-Type: application/json" -X POST "$url" -d "$payload" \
     > /dev/null 2>&1 || log "WARNING: Discord post failed"
+}
+
+# Like post_discord but posts with ?wait=true and stores the created message id in
+# SSM, so the offline lambda can EDIT this readiness message in place (Online ->
+# Offline) instead of posting a second message. Used for the one-per-session ping.
+post_status() { # $1 = title, $2 = description, $3 = color, $4 = optional JSON fields array
+  local url payload resp id
+  url=$(get_webhook_url) || { log "no webhook configured; skipping Discord post"; return 0; }
+  if [ -z "$url" ] || [ "$url" = "None" ]; then log "no webhook configured; skipping Discord post"; return 0; fi
+  payload=$(build_payload "$1" "$2" "$3" "${4:-[]}")
+  resp=$(curl -s -m 10 -H "Content-Type: application/json" -X POST "${url}?wait=true" -d "$payload" 2>/dev/null)
+  id=$(echo "$resp" | jq -r '.id // empty' 2>/dev/null)
+  if [ -n "$id" ]; then put_param "$STATUS_MSG_PARAM" "$id"; else log "WARNING: readiness post failed (no message id captured)"; fi
 }
 
 # Dedup key for an event line: collapse the lloesche/Valheim "Console: [Info :
@@ -337,7 +358,9 @@ while true; do
       if [ "$SESSION_PRIVATE" = "true" ]; then
         log "Private session — skipping public Server Online ping"
       else
-        notify_enabled online && post_discord "🟢 Server Online" "$DESC" 3776160 "$JOIN_FIELDS"
+        # post_status captures the message id so the offline lambda edits THIS
+        # message into the offline state (one message, Online -> Offline).
+        notify_enabled online && post_status "🟢 Server Online" "$DESC" 3776160 "$JOIN_FIELDS"
       fi
     fi
   else
