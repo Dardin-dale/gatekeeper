@@ -100,10 +100,16 @@ fi
 TS=$(date +%Y%m%d-%H%M%S)
 ARCHIVE="/tmp/${GAME_ID}-${TS}.tar.gz"
 log "Archiving $DATA_HOST -> $ARCHIVE"
-tar czf "$ARCHIVE" -C "$DATA_HOST" \
-  --exclude='./Logs' \
-  --exclude='*/CrashReportClient' \
-  .
+# Logs + crash reports are always-disposable. backupExcludes are game-specific
+# disposable dirs from the profile (paths relative to the data volume root) — most
+# importantly a game image's OWN backup dir living inside the volume: archiving it
+# would re-archive every prior backup, compounding the tar each session (the
+# lloesche Valheim image keeps world backups under ./backups; 390MB grew to 1.4GB).
+EXCLUDE_ARGS=(--exclude='./Logs' --exclude='*/CrashReportClient')
+while IFS= read -r ex; do
+  [ -n "$ex" ] && EXCLUDE_ARGS+=(--exclude="$ex")
+done < <(jq -r '.backupExcludes[]? // empty' "$PROFILE")
+tar czf "$ARCHIVE" -C "$DATA_HOST" "${EXCLUDE_ARGS[@]}" .
 
 DEST="s3://${BUCKET}/backups/${GAME_ID}/${TS}.tar.gz"
 SIZE=$(du -h "$ARCHIVE" | cut -f1)

@@ -46,6 +46,9 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     envMap: profile.container.envMap,
     volumes: profile.container.volumes,
     savePath: profile.container.savePath,
+    // Game-specific disposable dirs the host's backup tar skips (e.g. a game
+    // image's own backup dir inside the volume — see types.ts backupExcludes).
+    backupExcludes: profile.container.backupExcludes ?? [],
     defaultArgs: profile.container.defaultArgs ?? '',
     ports: profile.ports,
     queryPort: profile.queryPort,

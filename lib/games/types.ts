@@ -264,6 +264,14 @@ export interface ContainerSpec {
   volumes: VolumeMount[];
   /** Path holding world saves (relative to the data volume mount). */
   savePath: string;
+  /**
+   * Disposable dirs to exclude from the S3 backup tar (paths relative to the data
+   * volume root, tar `--exclude` patterns). Use for a game image's OWN backup dir
+   * that lives inside the volume — archiving it re-archives every prior backup,
+   * compounding the tar each session. e.g. Valheim (lloesche): `['./backups']`.
+   * Logs + crash reports are always excluded regardless.
+   */
+  backupExcludes?: string[];
   /** Launch args always applied for this game (combined with a world's extraArgs). */
   defaultArgs?: string;
 }

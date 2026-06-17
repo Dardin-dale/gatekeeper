@@ -55,6 +55,13 @@ export const valheim: GameProfile = {
     },
     volumes: [{ hostPath: '/mnt/game-data/config', containerPath: '/config' }],
     savePath: 'worlds_local', // /config/worlds_local
+    // Exclude all THREE local backup layers that pile up inside the volume — they're
+    // cheap in-place rollback, not DR, and archiving them compounds our S3 tar every
+    // session (observed: 390MB → 1.4GB in days, of which the live world is only ~82MB):
+    //   ./backups            — the lloesche image's hourly world zips (/config/backups)
+    //   *_backup_auto-*      — Valheim's OWN native auto-backups, kept beside the live save
+    //   *.old                — Valheim's save-rotation copies (another full world each)
+    backupExcludes: ['./backups', '*_backup_auto-*', '*.old'],
   },
 
   ports: [
