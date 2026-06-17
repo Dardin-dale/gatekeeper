@@ -1,8 +1,8 @@
 import { APIGatewayProxyResult } from "aws-lambda";
 import { GetParameterCommand, PutParameterCommand } from "@aws-sdk/client-ssm";
-import { ssmClient, withRetry, SSM_PARAMS } from "../utils/aws-clients";
-import { InteractionResponseType } from "./types";
-import { persona, personaFooter, slash } from "./util/persona";
+import { ssmClient, withRetry } from "../utils/aws-clients";
+import { SSM_PARAMS } from "../utils/params";
+import { persona, slash, personaEmbedResponse } from "./util/persona";
 import { requireOwner } from "./util/owner";
 
 // The owner-tunable cost-guardrail timers. Discord `key` choice -> the SSM param
@@ -13,25 +13,10 @@ const KNOBS: Record<string, { param: string; def: string; label: string }> = {
   "boot-timeout": { param: SSM_PARAMS.BOOT_TIMEOUT_MINUTES, def: "45", label: "Boot-timeout" },
 };
 
-function embed(title: string, description: string, color: number, footerSuffix?: string): APIGatewayProxyResult {
-  return {
-    statusCode: 200,
-    body: JSON.stringify({
-      type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-      data: {
-        embeds: [{
-          title,
-          description,
-          color,
-          footer: { text: footerSuffix ? personaFooter(footerSuffix) : persona.botName },
-        }],
-        // Owner-only admin surface — keep it private to the caller, matching the
-        // ephemeral denial, so cost-tuning never clutters the channel.
-        flags: 64,
-      },
-    }),
-  };
-}
+// Owner-only admin surface — replies are ephemeral (private to the caller), so
+// cost-tuning never clutters the channel.
+const embed = (title: string, description: string, color: number, footerSuffix?: string): APIGatewayProxyResult =>
+  personaEmbedResponse(title, description, color, { footerSuffix, ephemeral: true });
 
 /** Current value of a timer param, or undefined when unset (shows the default). */
 async function getValue(param: string): Promise<string | undefined> {

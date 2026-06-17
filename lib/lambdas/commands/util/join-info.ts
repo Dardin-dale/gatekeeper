@@ -1,5 +1,6 @@
 import { GetParameterCommand } from "@aws-sdk/client-ssm";
-import { ssmClient, SSM_PARAMS } from "../../utils/aws-clients";
+import { ssmClient } from "../../utils/aws-clients";
+import { SSM_PARAMS } from "../../utils/params";
 import { ACTIVE_GAME, gameDomain } from "../../../games";
 
 export interface EmbedField {

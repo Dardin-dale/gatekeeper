@@ -1,30 +1,11 @@
 import { APIGatewayProxyResult } from "aws-lambda";
 import { GetParameterCommand, PutParameterCommand } from "@aws-sdk/client-ssm";
-import {
-  ssmClient,
-  withRetry,
-  notifyCategories,
-  getNotifyParam,
-} from "../utils/aws-clients";
-import { InteractionResponseType } from "./types";
-import { persona, personaFooter, slash } from "./util/persona";
+import { ssmClient, withRetry } from "../utils/aws-clients";
+import { notifyCategories, getNotifyParam } from "../utils/params";
+import { persona, slash, personaEmbedResponse } from "./util/persona";
 
-function embed(title: string, description: string, color: number, footerSuffix?: string): APIGatewayProxyResult {
-  return {
-    statusCode: 200,
-    body: JSON.stringify({
-      type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-      data: {
-        embeds: [{
-          title,
-          description,
-          color,
-          footer: { text: footerSuffix ? personaFooter(footerSuffix) : persona.botName },
-        }],
-      },
-    }),
-  };
-}
+const embed = (title: string, description: string, color: number, footerSuffix?: string): APIGatewayProxyResult =>
+  personaEmbedResponse(title, description, color, { footerSuffix });
 
 /** Current on/off state of a category; default ON when the SSM param is unset. */
 async function getState(category: string): Promise<boolean> {

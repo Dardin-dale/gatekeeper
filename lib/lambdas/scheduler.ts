@@ -1,8 +1,8 @@
 import { EC2Client, StartInstancesCommand } from '@aws-sdk/client-ec2';
-import { GetParameterCommand, PutParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { ACTIVE_GAME } from '../games';
 import { WorldConfig } from './utils/world-config';
 import { persona, personaAvatarUrl, pickLine } from './commands/util/persona';
+import { SSM_PARAMS, putParam, getWebhookForGuild } from './utils/params';
 
 /**
  * Scheduled-openings Lambda (Phase 11) — the EventBridge Scheduler target.
@@ -22,10 +22,8 @@ import { persona, personaAvatarUrl, pickLine } from './commands/util/persona';
  */
 
 const ec2Client = new EC2Client();
-const ssmClient = new SSMClient();
 
 const SERVER_INSTANCE_ID = process.env.SERVER_INSTANCE_ID || '';
-const SSM_PREFIX = `/gatekeeper/${ACTIVE_GAME.id}`;
 
 export interface ScheduleFireEvent {
   action: 'start' | 'countdown' | 'delete-message';
@@ -54,12 +52,7 @@ export async function handler(event: ScheduleFireEvent): Promise<void> {
 
   if (event.action === 'start') {
     if (event.world) {
-      await ssmClient.send(new PutParameterCommand({
-        Name: `${SSM_PREFIX}/active-world`,
-        Value: JSON.stringify(event.world),
-        Type: 'String',
-        Overwrite: true,
-      }));
+      await putParam(SSM_PARAMS.ACTIVE_WORLD, JSON.stringify(event.world));
       console.log(`Active world set to ${event.world.name}`);
     }
     if (!SERVER_INSTANCE_ID) throw new Error('SERVER_INSTANCE_ID not set');
@@ -109,15 +102,5 @@ export async function handler(event: ScheduleFireEvent): Promise<void> {
 
 /** The guild webhook (SecureString) — same per-guild param the host scripts use. */
 async function getWebhookUrl(guildId?: string): Promise<string | undefined> {
-  if (!guildId) return undefined;
-  try {
-    const result = await ssmClient.send(new GetParameterCommand({
-      Name: `${SSM_PREFIX}/discord-webhook/${guildId}`,
-      WithDecryption: true,
-    }));
-    return result.Parameter?.Value || undefined;
-  } catch (err) {
-    console.log(`No webhook for guild ${guildId}`);
-    return undefined;
-  }
+  return guildId ? getWebhookForGuild(guildId) : undefined;
 }

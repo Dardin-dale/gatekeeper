@@ -1,4 +1,6 @@
+import { APIGatewayProxyResult } from "aws-lambda";
 import { ACTIVE_GAME } from "../../../games";
+import { InteractionResponseType } from "../types";
 
 /**
  * Persona helpers — the bot's voice/branding for the active game profile.
@@ -88,4 +90,33 @@ export function personaEmbed(fields: {
   if (fields.description) embed.description = fields.description;
   if (fields.withThumbnail && persona.thumbnailUrl) embed.thumbnail = { url: persona.thumbnailUrl };
   return embed;
+}
+
+/**
+ * A complete interaction response wrapping a single persona-footed embed — the
+ * shared shape behind `/<cmd> config|notify|backup` replies (title + description
+ * + color; persona footer, or the bot name when no suffix is given). Pass
+ * `ephemeral` for owner-only/admin surfaces (Discord flag 64).
+ */
+export function personaEmbedResponse(
+  title: string,
+  description: string,
+  color: number,
+  opts: { footerSuffix?: string; ephemeral?: boolean } = {},
+): APIGatewayProxyResult {
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+      data: {
+        embeds: [{
+          title,
+          description,
+          color,
+          footer: { text: opts.footerSuffix ? personaFooter(opts.footerSuffix) : persona.botName },
+        }],
+        ...(opts.ephemeral ? { flags: 64 } : {}),
+      },
+    }),
+  };
 }

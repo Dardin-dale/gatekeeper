@@ -3,11 +3,8 @@ import {
   GetParameterCommand,
   PutParameterCommand,
 } from "@aws-sdk/client-ssm";
-import {
-  ssmClient,
-  withRetry,
-  SSM_PARAMS,
-} from "../utils/aws-clients";
+import { ssmClient, withRetry } from "../utils/aws-clients";
+import { SSM_PARAMS } from "../utils/params";
 import { InteractionResponseType } from "./types";
 import { persona, personaEmbed, personaAvatarUrl, slash } from "./util/persona";
 

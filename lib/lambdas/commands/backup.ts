@@ -6,26 +6,11 @@ import {
   SERVER_INSTANCE_ID,
   getFastServerStatus,
 } from "../utils/aws-clients";
-import { InteractionResponseType } from "./types";
-import { persona, personaFooter, slash } from "./util/persona";
+import { persona, slash, personaEmbedResponse } from "./util/persona";
 
 /** Wrap an embed in the standard interaction response shape. */
-function embed(title: string, description: string, color: number, footerSuffix?: string): APIGatewayProxyResult {
-  return {
-    statusCode: 200,
-    body: JSON.stringify({
-      type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-      data: {
-        embeds: [{
-          title,
-          description,
-          color,
-          footer: { text: footerSuffix ? personaFooter(footerSuffix) : persona.botName },
-        }],
-      },
-    }),
-  };
-}
+const embed = (title: string, description: string, color: number, footerSuffix?: string): APIGatewayProxyResult =>
+  personaEmbedResponse(title, description, color, { footerSuffix });
 
 /**
  * `/gate backup` — archive the current world WITHOUT stopping the server. Mirrors

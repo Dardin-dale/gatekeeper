@@ -1,5 +1,6 @@
 import { PutParameterCommand } from '@aws-sdk/client-ssm';
-import { ssmClient, SSM_PARAMS, withRetry } from './aws-clients';
+import { ssmClient, withRetry } from './aws-clients';
+import { SSM_PARAMS } from './params';
 import { persona, personaFooter } from '../commands/util/persona';
 
 /**

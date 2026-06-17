@@ -50,6 +50,13 @@ import {
     LogGroup
 } from "aws-cdk-lib/aws-logs";
 
+// Bumped to force an instance replacement + EBS data-volume hand-off (see the
+// VolumeDetachResource custom resource + the instance tag below). MUST change for
+// any AMI / instance-type / user-data change, or CFN tries to re-attach the
+// still-attached data volume and the deploy rolls back. One constant so the two
+// consumers can never drift out of sync.
+const DEPLOYMENT_VERSION = '2026-06-13-v6';
+
 interface WorldConfig {
     /**
      * Display name of the world
@@ -478,7 +485,7 @@ EOF`,
             properties: {
                 VolumeId: dataVolume.ref,
                 // Trigger update when deployment version changes
-                DeploymentVersion: '2026-06-13-v6',
+                DeploymentVersion: DEPLOYMENT_VERSION,
             },
         });
 
@@ -526,7 +533,7 @@ EOF`,
         });
 
         // Add deployment version tag to force replacement when needed
-        Tags.of(this.ec2Instance).add('DeploymentVersion', '2026-06-13-v6');
+        Tags.of(this.ec2Instance).add('DeploymentVersion', DEPLOYMENT_VERSION);
 
         // Ensure volume is detached from old instances before new instance is created
         this.ec2Instance.node.addDependency(volumeDetach);

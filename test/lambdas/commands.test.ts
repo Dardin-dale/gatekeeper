@@ -11,14 +11,12 @@ jest.mock('discord-interactions', () => {
 const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
-// Mock the aws-clients module - store references in global
+// Mock the aws-clients module (clients + EC2 helpers) - store references in global
 jest.mock('../../lib/lambdas/utils/aws-clients', () => {
   const mockEc2Send = jest.fn();
   const mockSsmSend = jest.fn();
   const mockS3Send = jest.fn();
   const mockGetFastServerStatus = jest.fn();
-  const mockGetServerLive = jest.fn();
-  const mockGetSessionPrivate = jest.fn();
   const mockGetStatusMessage = jest.fn((status: string) => {
     switch (status) {
       case 'running': return 'Server is online and ready to play!';
@@ -32,8 +30,6 @@ jest.mock('../../lib/lambdas/utils/aws-clients', () => {
   (global as any).__mockSsmSend = mockSsmSend;
   (global as any).__mockS3Send = mockS3Send;
   (global as any).__mockGetFastServerStatus = mockGetFastServerStatus;
-  (global as any).__mockGetServerLive = mockGetServerLive;
-  (global as any).__mockGetSessionPrivate = mockGetSessionPrivate;
   (global as any).__mockGetStatusMessage = mockGetStatusMessage;
 
   return {
@@ -42,20 +38,24 @@ jest.mock('../../lib/lambdas/utils/aws-clients', () => {
     s3Client: { send: mockS3Send },
     SERVER_INSTANCE_ID: 'i-1234567890abcdef0',
     BACKUP_BUCKET_NAME: 'test-backup-bucket',
-    SSM_PARAMS: {
-      PLAYFAB_JOIN_CODE: '/gatekeeper/abiotic-factor/playfab-join-code',
-      ACTIVE_WORLD: '/gatekeeper/abiotic-factor/active-world',
-      DISCORD_WEBHOOK: '/gatekeeper/abiotic-factor/discord-webhook',
-      AUTO_SHUTDOWN_MINUTES: '/gatekeeper/abiotic-factor/auto-shutdown-minutes',
-      BOOT_TIMEOUT_MINUTES: '/gatekeeper/abiotic-factor/boot-timeout-minutes',
-      SESSION_PRIVATE: '/gatekeeper/abiotic-factor/session-private',
-      GUILD_DEFAULT_WORLD_PREFIX: '/gatekeeper/abiotic-factor/discord',
-    },
     withRetry: async <T>(operation: () => Promise<T>) => operation(),
     getInstanceStatus: jest.fn(),
     getInstanceDetails: jest.fn(),
     getFastServerStatus: mockGetFastServerStatus,
     getStatusMessage: mockGetStatusMessage,
+  };
+});
+
+// Mock the SSM params module — real keys/builders (requireActual), but the
+// liveness/privacy accessors are jest.fn()s the tests drive directly.
+jest.mock('../../lib/lambdas/utils/params', () => {
+  const actual = jest.requireActual('../../lib/lambdas/utils/params');
+  const mockGetServerLive = jest.fn();
+  const mockGetSessionPrivate = jest.fn();
+  (global as any).__mockGetServerLive = mockGetServerLive;
+  (global as any).__mockGetSessionPrivate = mockGetSessionPrivate;
+  return {
+    ...actual,
     getServerLive: mockGetServerLive,
     getSessionPrivate: mockGetSessionPrivate,
   };

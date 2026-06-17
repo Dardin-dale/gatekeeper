@@ -1,7 +1,8 @@
 import { APIGatewayProxyResult } from "aws-lambda";
 import { InteractionResponseType } from "./types";
 import { ACTIVE_GAME } from "../../games";
-import { getFastServerStatus, getServerLive, getSessionPrivate } from "../utils/aws-clients";
+import { getFastServerStatus } from "../utils/aws-clients";
+import { getServerLive, getSessionPrivate } from "../utils/params";
 import { personaEmbed, slash } from "./util/persona";
 import { buildJoinFields, joinHost, joinHint } from "./util/join-info";
 

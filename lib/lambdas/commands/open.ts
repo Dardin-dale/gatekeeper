@@ -3,11 +3,9 @@ import { GetParameterCommand, PutParameterCommand } from "@aws-sdk/client-ssm";
 import {
   ssmClient,
   withRetry,
-  SSM_PARAMS,
   getFastServerStatus,
-  getServerLive,
-  getSessionPrivate,
 } from "../utils/aws-clients";
+import { SSM_PARAMS, getServerLive, getSessionPrivate } from "../utils/params";
 import { InteractionResponseType } from "./types";
 import { persona, personaEmbed, personaAvatarUrl, slash } from "./util/persona";
 import { buildJoinFields, joinHost, joinHint } from "./util/join-info";

@@ -4,21 +4,22 @@ jest.mock('@aws-sdk/client-ssm', () => ({
   PutParameterCommand: jest.fn().mockImplementation((input: any) => ({ input, __type: 'Put' })),
 }));
 
-// aws-clients: mock the SSM client + getExtendMinutes; withRetry passes through.
+// aws-clients: mock the SSM client; withRetry passes through.
 jest.mock('../../lib/lambdas/utils/aws-clients', () => {
   const mockSsmSend = jest.fn();
-  const mockGetExtendMinutes = jest.fn();
   (global as any).__mockSsmSend = mockSsmSend;
-  (global as any).__mockGetExtendMinutes = mockGetExtendMinutes;
   return {
     ssmClient: { send: mockSsmSend },
     withRetry: async <T>(op: () => Promise<T>) => op(),
-    getExtendMinutes: mockGetExtendMinutes,
-    SSM_PARAMS: {
-      PLAYER_COUNT: '/gatekeeper/abiotic-factor/player-count',
-      EXTEND_UNTIL: '/gatekeeper/abiotic-factor/extend-until',
-    },
   };
+});
+
+// params: real keys/builders (requireActual); getExtendMinutes is a jest.fn().
+jest.mock('../../lib/lambdas/utils/params', () => {
+  const actual = jest.requireActual('../../lib/lambdas/utils/params');
+  const mockGetExtendMinutes = jest.fn();
+  (global as any).__mockGetExtendMinutes = mockGetExtendMinutes;
+  return { ...actual, getExtendMinutes: mockGetExtendMinutes };
 });
 
 // Delegated handlers — return sentinels so dispatch is testable without their AWS deps.

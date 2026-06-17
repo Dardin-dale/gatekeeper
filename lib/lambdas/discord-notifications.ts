@@ -1,11 +1,17 @@
 import { EventBridgeEvent, Context } from 'aws-lambda';
-import { SSMClient, GetParameterCommand, PutParameterCommand } from '@aws-sdk/client-ssm';
 import { SchedulerClient, CreateScheduleCommand } from '@aws-sdk/client-scheduler';
 import { persona, personaAvatarUrl, slash } from './commands/util/persona';
 import { ACTIVE_GAME } from '../games';
+import {
+  getActiveGuildId,
+  getActiveWorldName,
+  getMessageTtlHours,
+  getSessionPrivate,
+  getStatusMessageId,
+  getWebhookForGuild,
+  invalidateSessionParams,
+} from './utils/params';
 
-// Create AWS clients
-const ssmClient = new SSMClient();
 const schedulerClient = new SchedulerClient({});
 
 // EventBridge Scheduler wiring (shared with the openings feature): a one-off
@@ -13,80 +19,6 @@ const schedulerClient = new SchedulerClient({});
 const SCHEDULER_GROUP = process.env.SCHEDULER_GROUP || '';
 const SCHEDULER_TARGET_ARN = process.env.SCHEDULER_TARGET_ARN || '';
 const SCHEDULER_ROLE_ARN = process.env.SCHEDULER_ROLE_ARN || '';
-const MESSAGE_TTL_HOURS_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/message-ttl-hours`;
-
-// SSM Parameter names (scoped to the active game's subtree)
-const ACTIVE_WORLD_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/active-world`;
-const DISCORD_WEBHOOK_BASE = `/gatekeeper/${ACTIVE_GAME.id}/discord-webhook`;
-const JOIN_CODE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/join-code`;
-const SERVER_LIVE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/server-live`;
-const SESSION_PRIVATE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/session-private`;
-const STATUS_MESSAGE_ID_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/status-message-id`;
-const EXTEND_UNTIL_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/extend-until`;
-
-/** The active world's display name — the constant status-message title (matches the
- *  host's world_title), so the offline edit keeps the same headline as Online. */
-async function getActiveWorldName(): Promise<string | undefined> {
-  try {
-    const r = await ssmClient.send(new GetParameterCommand({ Name: ACTIVE_WORLD_PARAM }));
-    if (!r.Parameter?.Value) return undefined;
-    const w = JSON.parse(r.Parameter.Value);
-    return w.name || w.worldName || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Was the just-ended session private? Then suppress the public "offline" post. */
-async function wasSessionPrivate(): Promise<boolean> {
-  try {
-    const r = await ssmClient.send(new GetParameterCommand({ Name: SESSION_PRIVATE_PARAM }));
-    return r.Parameter?.Value === 'true';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * The id of this session's readiness ("Server Online") message, captured by the
- * host (or /<cmd> open) when it posted. We EDIT that message into the offline
- * state instead of posting a second one — so a session shows as one message that
- * flips Online→Offline. 'none'/absent means nothing was posted (private or the
- * online notice was off), so we fall back to posting fresh.
- */
-async function getStatusMessageId(): Promise<string | undefined> {
-  try {
-    const r = await ssmClient.send(new GetParameterCommand({ Name: STATUS_MESSAGE_ID_PARAM }));
-    const v = r.Parameter?.Value;
-    return v && v !== 'none' ? v : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Auto-delete TTL in hours (0 = off/unset/invalid → keep the message forever). */
-async function getMessageTtlHours(): Promise<number> {
-  try {
-    const r = await ssmClient.send(new GetParameterCommand({ Name: MESSAGE_TTL_HOURS_PARAM }));
-    const v = r.Parameter?.Value;
-    if (!v || v === 'off' || v === 'disabled') return 0;
-    const n = parseInt(v, 10);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  } catch {
-    return 0;
-  }
-}
-
-/** The active world's guild id — passed into the delete schedule so it resolves
- *  the right webhook when it fires (active-world could change before then). */
-async function getActiveGuildId(): Promise<string | undefined> {
-  try {
-    const r = await ssmClient.send(new GetParameterCommand({ Name: ACTIVE_WORLD_PARAM }));
-    return r.Parameter?.Value ? JSON.parse(r.Parameter.Value).discordServerId : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * Schedule this session's status message to auto-delete `message-ttl-hours` after
@@ -124,27 +56,6 @@ async function scheduleStatusMessageDeletion(messageId: string): Promise<void> {
 }
 
 /**
- * The join code is per-session: once the instance is stopped it's dead, and
- * /gate join|status must not show it next boot. The host scripts clear these on
- * their own stop paths, but this Lambda fires on EVERY stop — idle, /gate stop,
- * crash, console — so it's the invalidation catch-all.
- */
-async function invalidateSessionParams(): Promise<void> {
-  // Also reset session-private to public: it's per-start, so clearing it on stop
-  // keeps the default public — a later scheduled/normal start is never mistaken
-  // for the previous private session.
-  for (const [name, value] of [[JOIN_CODE_PARAM, 'none'], [SERVER_LIVE_PARAM, 'false'], [SESSION_PRIVATE_PARAM, 'false'], [STATUS_MESSAGE_ID_PARAM, 'none'], [EXTEND_UNTIL_PARAM, '0']]) {
-    try {
-      await ssmClient.send(new PutParameterCommand({
-        Name: name, Value: value, Type: 'String', Overwrite: true,
-      }));
-    } catch (err) {
-      console.error(`Failed to invalidate ${name}:`, err);
-    }
-  }
-}
-
-/**
  * Discord notifications driven by EventBridge.
  *
  * The on-host monitor (scripts/game/monitor.sh) posts the readiness ping and the
@@ -152,35 +63,17 @@ async function invalidateSessionParams(): Promise<void> {
  * Lambda is left with the one notification the host can't send: the *final*
  * "server stopped" confirmation, which fires from AWS's own EC2 state-change
  * event after the instance is gone.
+ *
+ * Resolve the webhook for the active world's guild; throws (caught by the
+ * handler) when none is configured so we never post to a dead URL.
  */
 async function getWebhookUrl(): Promise<string> {
-  // Resolve the webhook for the active world's guild.
-  let guildId: string | undefined;
-  try {
-    const activeWorldResult = await ssmClient.send(new GetParameterCommand({
-      Name: ACTIVE_WORLD_PARAM,
-    }));
-    if (activeWorldResult.Parameter?.Value) {
-      guildId = JSON.parse(activeWorldResult.Parameter.Value).discordServerId;
-    }
-  } catch (err) {
-    console.log('No active world found; cannot resolve a webhook');
+  const guildId = await getActiveGuildId();
+  const url = guildId ? await getWebhookForGuild(guildId) : undefined;
+  if (!url) {
+    throw new Error(`No Discord webhook configured - use ${slash} setup in Discord`);
   }
-
-  if (guildId) {
-    try {
-      const webhookResult = await ssmClient.send(new GetParameterCommand({
-        Name: `${DISCORD_WEBHOOK_BASE}/${guildId}`,
-      }));
-      if (webhookResult.Parameter?.Value) {
-        return webhookResult.Parameter.Value;
-      }
-    } catch (err) {
-      console.log(`No webhook found for guild ${guildId}`);
-    }
-  }
-
-  throw new Error(`No Discord webhook configured - use ${slash} setup in Discord`);
+  return url;
 }
 
 export async function handler(
@@ -194,12 +87,30 @@ export async function handler(
     console.log(`Processing event type: ${eventType}`);
 
     let message: any;
-    let statusMessageId: string | undefined; // edit this readiness message in place, if present
+    // DESIGN FORK — "update-in-place" vs "message-per-status".
+    //
+    // Current (update-in-place): a session is ONE Discord message that the host
+    // and this Lambda PATCH through its lifecycle (Online → Winding Down →
+    // Offline). statusMessageId is that message's id, captured when it was first
+    // posted; we edit it here instead of posting a second message. Keeps the
+    // channel tidy — one row per session — but couples the components: the host
+    // must hand off the id (SSM status-message-id) and a deleted/expired message
+    // forces the 404/400 fallback below.
+    //
+    // Alternative (message-per-status): each transition posts its own fresh
+    // message. Simpler and fully decoupled (no id handoff, no PATCH edge cases),
+    // at the cost of N messages per session cluttering the channel.
+    //
+    // The fork is gated entirely on statusMessageId being present: it is read
+    // from SSM and PATCHed when set, else we POST fresh. To revert to
+    // message-per-status, stop capturing the id (host + `getStatusMessageId`)
+    // and this path falls back to plain POSTs automatically.
+    let statusMessageId: string | undefined;
     switch (eventType) {
       case 'EC2 Instance State-change Notification':
         if (event.detail.state === 'stopped') {
           // Read privacy + the status message id + world name BEFORE invalidating.
-          const privateSession = await wasSessionPrivate();
+          const privateSession = await getSessionPrivate();
           statusMessageId = await getStatusMessageId();
           const worldName = await getActiveWorldName();
           await invalidateSessionParams();

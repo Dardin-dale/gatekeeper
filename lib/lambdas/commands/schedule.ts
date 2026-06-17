@@ -7,7 +7,8 @@ import {
   SchedulerClient,
 } from "@aws-sdk/client-scheduler";
 import { GetParameterCommand } from "@aws-sdk/client-ssm";
-import { ssmClient, SSM_PARAMS, getGuildDefaultWorldParam } from "../utils/aws-clients";
+import { ssmClient } from "../utils/aws-clients";
+import { SSM_PARAMS, getGuildDefaultWorldParam } from "../utils/params";
 import { WORLD_CONFIGS, WorldConfig, getDefaultWorldConfig } from "../utils/world-config";
 import { parseWhen, WhenParseError } from "../utils/schedule-time";
 import { InteractionResponseType } from "./types";

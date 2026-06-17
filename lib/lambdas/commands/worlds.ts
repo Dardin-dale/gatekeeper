@@ -1,6 +1,7 @@
 import { APIGatewayProxyResult } from "aws-lambda";
 import { GetParameterCommand } from "@aws-sdk/client-ssm";
-import { ssmClient, getGuildDefaultWorldParam } from "../utils/aws-clients";
+import { ssmClient } from "../utils/aws-clients";
+import { getGuildDefaultWorldParam } from "../utils/params";
 import { ACTIVE_GAME } from "../../games";
 import { WORLD_CONFIGS, getDefaultWorldConfig } from "../utils/world-config";
 import { personaEmbed, slash } from "./util/persona";

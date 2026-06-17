@@ -1,11 +1,7 @@
 import { APIGatewayProxyResult } from "aws-lambda";
 import { GetParameterCommand, PutParameterCommand } from "@aws-sdk/client-ssm";
-import {
-  ssmClient,
-  withRetry,
-  SSM_PARAMS,
-  getExtendMinutes,
-} from "../utils/aws-clients";
+import { ssmClient, withRetry } from "../utils/aws-clients";
+import { SSM_PARAMS, getExtendMinutes } from "../utils/params";
 import { InteractionResponseType } from "./types";
 import { handleStatusCommand } from "./status";
 import { handleStopCommand } from "./stop";

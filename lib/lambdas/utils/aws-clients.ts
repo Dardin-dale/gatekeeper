@@ -4,12 +4,10 @@ import {
 } from "@aws-sdk/client-ec2";
 import {
   SSMClient,
-  GetParameterCommand,
 } from "@aws-sdk/client-ssm";
 import {
   S3Client
 } from "@aws-sdk/client-s3";
-import { ACTIVE_GAME } from "../../games";
 
 // AWS client configuration optimized for Discord interactions
 // Balanced timeout and retry configuration for reliable responses
@@ -60,122 +58,6 @@ export async function withRetry<T>(
 // Common environment variables
 export const SERVER_INSTANCE_ID = process.env.SERVER_INSTANCE_ID || '';
 export const BACKUP_BUCKET_NAME = process.env.BACKUP_BUCKET_NAME || '';
-
-// SSM Parameter paths
-// All SSM paths live under the active game's subtree so each game's stack is
-// self-contained: /gatekeeper/<game-id>/... (matches the host scripts + the stack).
-const SSM_PREFIX = `/gatekeeper/${ACTIVE_GAME.id}`;
-export const SSM_PARAMS = {
-  ACTIVE_WORLD: `${SSM_PREFIX}/active-world`,
-  DISCORD_WEBHOOK: `${SSM_PREFIX}/discord-webhook`, // base path; per-guild webhook is appended
-  AUTO_SHUTDOWN_MINUTES: `${SSM_PREFIX}/auto-shutdown-minutes`,
-  BOOT_TIMEOUT_MINUTES: `${SSM_PREFIX}/boot-timeout-minutes`,
-  PLAYER_COUNT: `${SSM_PREFIX}/player-count`,
-  JOIN_CODE: `${SSM_PREFIX}/join-code`, // per-session lobby code scraped by the host monitor ('none' = absent)
-  SERVER_LIVE: `${SSM_PREFIX}/server-live`, // 'true' while the game answers the host monitor's liveness checks
-  SESSION_PRIVATE: `${SSM_PREFIX}/session-private`, // 'true' for a quiet session: host skips the public online ping, join/status reply privately. Set per-start, flipped off by /<cmd> open.
-  STATUS_MESSAGE_ID: `${SSM_PREFIX}/status-message-id`, // id of this session's readiness message; the offline notification edits it in place ('none' = post fresh)
-  MESSAGE_TTL_HOURS: `${SSM_PREFIX}/message-ttl-hours`, // hours after offline before the status message auto-deletes ('off' = keep)
-  PREWARM_MINUTES: `${SSM_PREFIX}/prewarm-minutes`, // scheduled openings: start this many minutes before the announced time
-  EXTEND_MINUTES: `${SSM_PREFIX}/extend-minutes`, // Extend button: minutes of idle grace added per press ('off' = feature disabled)
-  EXTEND_UNTIL: `${SSM_PREFIX}/extend-until`, // epoch-ms the host monitor holds off idle-shutdown until (Extend button writes it; '0'/absent = no grace)
-  // Per-category notification toggles: /gatekeeper/<game-id>/notify/<category> = on|off
-  // (read by the host post_discord; absent = on). See lib/lambdas/commands/notify.ts.
-  NOTIFY_PREFIX: `${SSM_PREFIX}/notify`,
-  // Per-Discord-server default world: /gatekeeper/<game-id>/discord/<guild-id>/default-world
-  GUILD_DEFAULT_WORLD_PREFIX: `${SSM_PREFIX}/discord`,
-};
-
-/** Fixed lifecycle notification categories every game has. */
-export const SYSTEM_NOTIFY_CATEGORIES = [
-  { key: "online", label: "🟢 Server online / ready" },
-  { key: "idle", label: "💤 Idle-shutdown notice" },
-  { key: "backup", label: "💾 Backup complete" },
-  { key: "failed", label: "⚠️ Failed to start" },
-] as const;
-
-/**
- * Every notification category for the active game: the system ones plus one per
- * distinct event category the profile defines (e.g. deaths, raids, joins). This
- * is the source of truth for both `/<cmd> notify` validation/listing and the
- * registered command's choices.
- */
-export function notifyCategories(): { key: string; label: string }[] {
-  const seen = new Map<string, string>();
-  for (const { key, label } of SYSTEM_NOTIFY_CATEGORIES) seen.set(key, label);
-  for (const e of ACTIVE_GAME.events ?? []) {
-    const cat = e.category ?? e.id;
-    if (!seen.has(cat)) seen.set(cat, e.label ?? cat);
-  }
-  return [...seen].map(([key, label]) => ({ key, label }));
-}
-
-/** SSM path for a notification category's on/off toggle. */
-export function getNotifyParam(category: string): string {
-  return `${SSM_PARAMS.NOTIFY_PREFIX}/${category}`;
-}
-
-/**
- * Get the SSM parameter path for a guild's default world
- */
-export function getGuildDefaultWorldParam(guildId: string): string {
-  return `${SSM_PARAMS.GUILD_DEFAULT_WORLD_PREFIX}/${guildId}/default-world`;
-}
-
-/**
- * Whether the game itself is up, as opposed to just the EC2 instance: the host
- * monitor writes 'true'/'false' on liveness transitions and 'false' at session
- * start/stop. A missing parameter counts as live so sessions predating the flag
- * (or a wiped param) never suppress join info.
- */
-export async function getServerLive(): Promise<boolean> {
-  try {
-    const result = await ssmClient.send(new GetParameterCommand({
-      Name: SSM_PARAMS.SERVER_LIVE,
-    }));
-    return result.Parameter?.Value !== 'false';
-  } catch (err) {
-    return true;
-  }
-}
-
-/**
- * Whether the current session is private (quiet): started with `/<cmd> start
- * private`. The host then skips the public "Server Online" broadcast, and
- * /<cmd> join|status reply ephemerally. Set per-start (so a normal start resets
- * it to public) and flipped off by `/<cmd> open`. Absent/anything-but-'true'
- * counts as public — the safe default (never accidentally hides a public game).
- */
-export async function getSessionPrivate(): Promise<boolean> {
-  try {
-    const result = await ssmClient.send(new GetParameterCommand({
-      Name: SSM_PARAMS.SESSION_PRIVATE,
-    }));
-    return result.Parameter?.Value === 'true';
-  } catch (err) {
-    return false;
-  }
-}
-
-/**
- * Minutes of idle grace the Extend button grants per press. Per-game default
- * (seeded to SSM at deploy, retunable via `/<cmd> config set extend`); falls back
- * to 5. Returns 'off' when the feature is disabled, so callers can suppress the
- * button / reply that it's unavailable.
- */
-export async function getExtendMinutes(): Promise<number | 'off'> {
-  try {
-    const result = await ssmClient.send(new GetParameterCommand({
-      Name: SSM_PARAMS.EXTEND_MINUTES,
-    }));
-    const v = result.Parameter?.Value;
-    if (v === 'off' || v === 'disabled') return 'off';
-    const n = parseInt(v ?? '', 10);
-    return Number.isFinite(n) && n > 0 ? n : 5;
-  } catch {
-    return 5;
-  }
-}
 
 /**
  * Get the current status of the game server EC2 instance
