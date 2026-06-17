@@ -33,8 +33,8 @@ Every game gets its own bot, command, and in-character persona — all driven by
 
 | | Persona | Game · Command | Bio |
 |---|---|---|---|
-| <img src="images/DrDerekManse.webp" width="72" alt="Dr. Derek Manse"> | **Dr. Derek Manse** | Abiotic Factor · `/gate` | Director, GATE Cascade Research Facility. Clinical, condescending, comprehensively insured. His pre-recorded holograms announce openings, countdowns, and your statistical odds. *It's time for Science!* |
-| <img src="images/Munin.webp" width="72" alt="Munin"> | **Munin** | Valheim · `/munin` | The Allfather's raven of *memory*. Remembers your worlds, your deeds, and exactly when game night starts — reminding you is rather his whole purpose. |
+| <img src="images/DrDerekManse.webp" width="72" alt="Dr. Derek Manse"> | **Dr. Derek Manse** | <img src="assets/logos/abiotic-factor-logo.png" width="130" alt="Abiotic Factor"><br>`/gate` | Director, GATE Cascade Research Facility. Clinical, condescending, comprehensively insured. His pre-recorded holograms announce openings, countdowns, and your statistical odds. *It's time for Science!* |
+| <img src="images/Munin.webp" width="72" alt="Munin"> | **Munin** | <img src="assets/logos/valheim-logo.webp" width="130" alt="Valheim"><br>`/munin` | The Allfather's raven of *memory*. Remembers your worlds, your deeds, and exactly when game night starts — reminding you is rather his whole purpose. |
 | <img src="images/GATEKeeper.png" width="72" alt="Old Man"> | TBD | TBD | Feel free to make an Issue or pull request for a new Game! |
 
 ## Architecture
