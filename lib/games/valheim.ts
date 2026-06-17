@@ -44,7 +44,13 @@ export const valheim: GameProfile = {
   container: {
     image: 'ghcr.io/community-valheim-tools/valheim-server',
     name: 'valheim-server',
-    staticEnv: {},
+    // Cap the image's in-container world backups (/config/backups) at the same
+    // count our S3 rotation keeps (BACKUPS_TO_KEEP=7). Default is 0 = unlimited,
+    // which let them pile up inside the volume (a source of the backup bloat).
+    // These are local rollback only — our backupExcludes keeps them out of the
+    // off-box S3 archive. Valheim's own native *_backup_auto-* saves aren't env-
+    // tunable (the image exposes no knob) and are self-capped by the game.
+    staticEnv: { BACKUPS_MAX_COUNT: '7' },
     envMap: {
       serverName: 'SERVER_NAME',
       worldName: 'WORLD_NAME',
