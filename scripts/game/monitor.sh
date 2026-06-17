@@ -337,6 +337,11 @@ while true; do
     fi
     if [ ! -f "$SEEN_LIVE_FLAG" ]; then
       touch "$SEEN_LIVE_FLAG"
+      # Anchor the idle clock to first-live, not monitor start. Otherwise a slow
+      # boot (e.g. a fresh Steam download) burns into the idle grace window — with
+      # a 12-min boot and a 15-min auto-shutdown, a player-less session would
+      # idle-stop ~3 min after coming online instead of getting the full grace.
+      echo "$NOW" > "$ACTIVITY_FILE"
       # Prefer the stable derived domain; fall back to the public IP.
       JOIN_HOST="${GAME_DOMAIN:-}"
       [ -z "$JOIN_HOST" ] && JOIN_HOST=$(imds public-ipv4)
