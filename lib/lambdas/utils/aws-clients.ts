@@ -77,6 +77,8 @@ export const SSM_PARAMS = {
   STATUS_MESSAGE_ID: `${SSM_PREFIX}/status-message-id`, // id of this session's readiness message; the offline notification edits it in place ('none' = post fresh)
   MESSAGE_TTL_HOURS: `${SSM_PREFIX}/message-ttl-hours`, // hours after offline before the status message auto-deletes ('off' = keep)
   PREWARM_MINUTES: `${SSM_PREFIX}/prewarm-minutes`, // scheduled openings: start this many minutes before the announced time
+  EXTEND_MINUTES: `${SSM_PREFIX}/extend-minutes`, // Extend button: minutes of idle grace added per press ('off' = feature disabled)
+  EXTEND_UNTIL: `${SSM_PREFIX}/extend-until`, // epoch-ms the host monitor holds off idle-shutdown until (Extend button writes it; '0'/absent = no grace)
   // Per-category notification toggles: /gatekeeper/<game-id>/notify/<category> = on|off
   // (read by the host post_discord; absent = on). See lib/lambdas/commands/notify.ts.
   NOTIFY_PREFIX: `${SSM_PREFIX}/notify`,
@@ -152,6 +154,26 @@ export async function getSessionPrivate(): Promise<boolean> {
     return result.Parameter?.Value === 'true';
   } catch (err) {
     return false;
+  }
+}
+
+/**
+ * Minutes of idle grace the Extend button grants per press. Per-game default
+ * (seeded to SSM at deploy, retunable via `/<cmd> config set extend`); falls back
+ * to 5. Returns 'off' when the feature is disabled, so callers can suppress the
+ * button / reply that it's unavailable.
+ */
+export async function getExtendMinutes(): Promise<number | 'off'> {
+  try {
+    const result = await ssmClient.send(new GetParameterCommand({
+      Name: SSM_PARAMS.EXTEND_MINUTES,
+    }));
+    const v = result.Parameter?.Value;
+    if (v === 'off' || v === 'disabled') return 'off';
+    const n = parseInt(v ?? '', 10);
+    return Number.isFinite(n) && n > 0 ? n : 5;
+  } catch {
+    return 5;
   }
 }
 

@@ -609,6 +609,17 @@ EOF`,
             description: "Hours before a session's status message auto-deletes (or 'off' to keep)",
         });
 
+        // Extend button: minutes of idle grace added per press. Profile default,
+        // EXTEND_MINUTES (.env) overrides, `cli config set extend` retunes live.
+        // 'off' disables the button entirely.
+        const extendMinutes =
+            process.env.EXTEND_MINUTES || String(ACTIVE_GAME.extendMinutes ?? 5);
+        new StringParameter(this, "ExtendMinutesParam", {
+            parameterName: `/gatekeeper/${ACTIVE_GAME.id}/extend-minutes`,
+            stringValue: extendMinutes,
+            description: "Minutes of idle grace the Extend button grants per press (or 'off' to disable)",
+        });
+
         // Cost guardrail: an AWS Budget that emails when monthly spend trends past a
         // threshold. Region-agnostic (unlike a CloudWatch billing alarm) and $0.
         // Opt-in via .env: set BILLING_ALERT_EMAIL (and optionally BILLING_BUDGET_USD,

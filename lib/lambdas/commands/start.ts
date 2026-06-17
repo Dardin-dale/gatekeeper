@@ -250,7 +250,16 @@ export async function handleStartCommand(worldName?: string, guildId?: string, i
             },
             timestamp: new Date().toISOString(),
           }],
-          ...(isPrivate ? { flags: 64 } : {}), // ephemeral so the channel never sees a private session start
+          // Private start: a one-tap "Make Public" on the starter's ephemeral reply
+          // (custom_id gk_open → handleComponentInteraction → handleOpenCommand). The
+          // public "Server Online" ping is suppressed in private mode, so the starter's
+          // reply is the control surface; the button works from boot through live.
+          ...(isPrivate ? {
+            flags: 64, // ephemeral so the channel never sees a private session start
+            components: [{ type: 1, components: [
+              { type: 2, style: 3, label: "🔓 Make Public", custom_id: "gk_open" },
+            ] }],
+          } : {}),
         }
       })
     };

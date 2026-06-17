@@ -14,6 +14,7 @@ const KNOBS = {
   'auto-shutdown': { param: 'auto-shutdown-minutes', def: '15', label: 'Idle auto-shutdown', unit: 'min' },
   'boot-timeout': { param: 'boot-timeout-minutes', def: '45', label: 'Boot-timeout', unit: 'min' },
   'message-ttl': { param: 'message-ttl-hours', def: '16', label: 'Status message TTL', unit: 'h' },
+  'extend': { param: 'extend-minutes', def: '5', label: 'Idle extend window', unit: 'min' },
 };
 
 function paramName(suffix) {

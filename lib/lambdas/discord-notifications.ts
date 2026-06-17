@@ -1,7 +1,7 @@
 import { EventBridgeEvent, Context } from 'aws-lambda';
 import { SSMClient, GetParameterCommand, PutParameterCommand } from '@aws-sdk/client-ssm';
 import { SchedulerClient, CreateScheduleCommand } from '@aws-sdk/client-scheduler';
-import { persona, personaEmbed, personaAvatarUrl, slash } from './commands/util/persona';
+import { persona, personaAvatarUrl, slash } from './commands/util/persona';
 import { ACTIVE_GAME } from '../games';
 
 // Create AWS clients
@@ -22,6 +22,20 @@ const JOIN_CODE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/join-code`;
 const SERVER_LIVE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/server-live`;
 const SESSION_PRIVATE_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/session-private`;
 const STATUS_MESSAGE_ID_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/status-message-id`;
+const EXTEND_UNTIL_PARAM = `/gatekeeper/${ACTIVE_GAME.id}/extend-until`;
+
+/** The active world's display name — the constant status-message title (matches the
+ *  host's world_title), so the offline edit keeps the same headline as Online. */
+async function getActiveWorldName(): Promise<string | undefined> {
+  try {
+    const r = await ssmClient.send(new GetParameterCommand({ Name: ACTIVE_WORLD_PARAM }));
+    if (!r.Parameter?.Value) return undefined;
+    const w = JSON.parse(r.Parameter.Value);
+    return w.name || w.worldName || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Was the just-ended session private? Then suppress the public "offline" post. */
 async function wasSessionPrivate(): Promise<boolean> {
@@ -119,7 +133,7 @@ async function invalidateSessionParams(): Promise<void> {
   // Also reset session-private to public: it's per-start, so clearing it on stop
   // keeps the default public — a later scheduled/normal start is never mistaken
   // for the previous private session.
-  for (const [name, value] of [[JOIN_CODE_PARAM, 'none'], [SERVER_LIVE_PARAM, 'false'], [SESSION_PRIVATE_PARAM, 'false'], [STATUS_MESSAGE_ID_PARAM, 'none']]) {
+  for (const [name, value] of [[JOIN_CODE_PARAM, 'none'], [SERVER_LIVE_PARAM, 'false'], [SESSION_PRIVATE_PARAM, 'false'], [STATUS_MESSAGE_ID_PARAM, 'none'], [EXTEND_UNTIL_PARAM, '0']]) {
     try {
       await ssmClient.send(new PutParameterCommand({
         Name: name, Value: value, Type: 'String', Overwrite: true,
@@ -184,9 +198,10 @@ export async function handler(
     switch (eventType) {
       case 'EC2 Instance State-change Notification':
         if (event.detail.state === 'stopped') {
-          // Read privacy + the status message id BEFORE invalidating (which resets both).
+          // Read privacy + the status message id + world name BEFORE invalidating.
           const privateSession = await wasSessionPrivate();
           statusMessageId = await getStatusMessageId();
+          const worldName = await getActiveWorldName();
           await invalidateSessionParams();
           // Edit the session's status message (the online ping OR the private cue)
           // into the offline state — editing is silent, so it's correct for a
@@ -195,7 +210,7 @@ export async function handler(
           if (privateSession && !statusMessageId) {
             console.log('Private session with no status message — nothing to post');
           } else {
-            message = handleEC2StoppedEvent(event.detail);
+            message = handleEC2StoppedEvent(event.detail, worldName);
           }
         }
         break;
@@ -247,25 +262,25 @@ export async function handler(
   }
 }
 
-/** Final confirmation once the instance actually reaches the stopped state. */
-function handleEC2StoppedEvent(detail: any): any {
-  const time = detail.time ? new Date(detail.time) : new Date();
+/**
+ * Final state of the session's status message once the instance reaches 'stopped'.
+ * Built to MATCH the host's build_payload shape exactly (constant world-name title,
+ * a 🛑 status line leading the description, persona footer/thumbnail, no byline or
+ * timestamp), so the edit reads as the same message updating — not a foreign post.
+ * `components: []` clears the Stop/Extend buttons.
+ */
+function handleEC2StoppedEvent(_detail: any, worldName?: string): any {
   return {
-    // Post as the persona: the bot's app icon is the avatar, the character art
-    // rides inside the embed as its thumbnail (matches the host webhook posts).
     username: persona.characterName,
     ...(personaAvatarUrl ? { avatar_url: personaAvatarUrl } : {}),
-    embeds: [
-      personaEmbed({
-        // Webhook identity above already names the character; no byline repeat.
-        byline: false,
-        withThumbnail: true,
-        title: '🛑 Server Offline',
-        description: `${persona.lines?.offline ?? 'The server has shut down completely.'}\n` +
-          `Use \`${slash} start\` when you want to play again.`,
-        color: 0x95a5a6, // gray
-        extra: { timestamp: time.toISOString() },
-      }),
-    ],
+    components: [], // drop the live-control buttons now that the session is over
+    embeds: [{
+      title: worldName ?? ACTIVE_GAME.displayName,
+      description: `🛑 **Offline** · ${persona.lines?.offline ?? 'The server has shut down completely.'}\n` +
+        `Use \`${slash} start\` to play again.`,
+      color: 0x95a5a6, // gray
+      footer: { text: persona.footer },
+      ...(persona.thumbnailUrl ? { thumbnail: { url: persona.thumbnailUrl } } : {}),
+    }],
   };
 }

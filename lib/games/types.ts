@@ -133,6 +133,14 @@ export interface GameProfile {
    * `cli config set message-ttl <hours|off>` retunes at runtime. Default 16.
    */
   messageTtlHours?: number | 'off';
+  /**
+   * Minutes of idle grace the **Extend** status-message button grants per press —
+   * the monitor holds off auto-shutdown that long. A number, or 'off' to disable
+   * the button. Seeds SSM `/gatekeeper/<game>/extend-minutes`; `.env`
+   * EXTEND_MINUTES overrides; `cli config set extend <min|off>` retunes at
+   * runtime. Default 5.
+   */
+  extendMinutes?: number | 'off';
 
   /**
    * How players connect / how the bot reports "how to join". This is the one

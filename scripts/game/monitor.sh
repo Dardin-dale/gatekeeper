@@ -83,6 +83,14 @@ JOIN_CODE_PARAM="/gatekeeper/${GAME_ID}/join-code"
 SERVER_LIVE_PARAM="/gatekeeper/${GAME_ID}/server-live"
 SESSION_PRIVATE_PARAM="/gatekeeper/${GAME_ID}/session-private" # 'true' = quiet session: skip the public online ping
 STATUS_MSG_PARAM="/gatekeeper/${GAME_ID}/status-message-id"    # readiness message id; the offline lambda edits it in place
+EXTEND_MINUTES_PARAM="/gatekeeper/${GAME_ID}/extend-minutes"   # Extend button: minutes of idle grace per press ('off' = disabled)
+EXTEND_UNTIL_PARAM="/gatekeeper/${GAME_ID}/extend-until"       # epoch-ms to hold off idle-shutdown until (Extend button writes it)
+DISPLAY_NAME=$(jq -r '.displayName // "Server"' "$PROFILE")    # fallback status-message title when no world name is set
+
+# Status-message button rows. custom_ids / styles MUST match the handlers in
+# lib/lambdas/commands/component.ts (a Cancel there re-renders this same row).
+BTN_STOP='{"type":2,"style":4,"label":"🛑 Stop","custom_id":"gk_stop"}'
+BTN_EXTEND='{"type":2,"style":1,"label":"⏰ Extend","custom_id":"gk_extend"}'
 
 put_param() { # $1 = name, $2 = value (best-effort)
   aws ssm put-parameter --name "$1" --type String --value "$2" --overwrite \
@@ -91,9 +99,11 @@ put_param() { # $1 = name, $2 = value (best-effort)
 # Invalidate the previous session in SSM: the join code is per-session, so until
 # this run's scrape lands, /gate join|status must see 'none' — not last run's
 # dead code. server-live=false tells the lambdas the game isn't joinable yet.
+# extend-until is cleared so a stale Extend grace never leaks into the next session.
 invalidate_session_params() {
   put_param "$JOIN_CODE_PARAM" "none"
   put_param "$SERVER_LIVE_PARAM" "false"
+  put_param "$EXTEND_UNTIL_PARAM" "0"
 }
 
 # Fresh session: clear edge/idle state so stale files can't trigger an instant shutdown.
@@ -107,6 +117,7 @@ invalidate_session_params
 put_param "$STATUS_MSG_PARAM" "none"
 MISS_COUNT=0          # consecutive failed liveness checks (for down-debounce)
 LAST_PLAYERS=0        # last good player count (held through a debounced blip)
+PUBLISHED_BTN="show"  # status-message button state ("show"=Extend visible / "hide"); the first-live post uses live_controls(0)=show
 PUBLISHED_JOIN_CODE="" # join code currently in SSM (rewrite only on change)
 BOOT_START=$(date +%s) # for the boot-timeout safety net (server-never-comes-up guard)
 log "Monitoring $GAME_ID (A2S 127.0.0.1:$QUERY_PORT, game port $GAME_PORT)"
@@ -144,16 +155,63 @@ notify_enabled() { # $1 = category
 }
 
 # Build the webhook payload with jq so name/avatar/text are safely JSON-escaped.
-build_payload() { # $1 = title, $2 = description, $3 = color, $4 = optional JSON fields array
+# $5 (components) is always emitted — pass [] to explicitly CLEAR buttons on an
+# edit (a webhook message-edit leaves omitted fields unchanged, so [] is required
+# to remove them at winding-down/offline).
+build_payload() { # $1=title $2=description $3=color $4=optional fields JSON $5=optional components JSON
   jq -n --arg name "$PERSONA_NAME" --arg icon "$PERSONA_ICON" --arg thumb "$PERSONA_THUMB" \
     --arg footer "$PERSONA_FOOTER" \
     --arg title "$1" --arg desc "$2" --argjson color "$3" --argjson fields "${4:-[]}" \
-    '{username: $name, embeds: [{title: $title, description: $desc, color: $color}]}
+    --argjson components "${5:-[]}" \
+    '{username: $name, embeds: [{title: $title, description: $desc, color: $color}], components: $components}
      | if $desc == "" then .embeds[0] |= del(.description) else . end
      | if $footer != "" then .embeds[0].footer = {text: $footer} else . end
      | if ($fields | length) > 0 then .embeds[0].fields = $fields else . end
      | if $thumb != "" then .embeds[0].thumbnail = {url: $thumb} else . end
      | if $icon != "" then .avatar_url = $icon else . end'
+}
+
+# The world's display name — the constant title across the status message's whole
+# lifecycle (Online -> Winding Down -> Offline), so it reads as one message
+# updating rather than a new post each state. Falls back to the game name.
+world_title() {
+  local t
+  t=$(aws ssm get-parameter --name "$ACTIVE_WORLD_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null | jq -r '.name // .worldName // empty' 2>/dev/null)
+  if [ -n "$t" ] && [ "$t" != "null" ]; then echo "$t"; else echo "$DISPLAY_NAME"; fi
+}
+
+# Live-controls action row for the status message: Stop always; Extend only while
+# the idle clock actually runs (0 players) AND the feature is enabled. $1 = player count.
+live_controls() {
+  local extend_min
+  extend_min=$(aws ssm get-parameter --name "$EXTEND_MINUTES_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "5")
+  if [ "${1:-0}" -ge 1 ] || [ "$extend_min" = "off" ] || [ "$extend_min" = "disabled" ]; then
+    echo "[{\"type\":1,\"components\":[${BTN_STOP}]}]"
+  else
+    echo "[{\"type\":1,\"components\":[${BTN_STOP},${BTN_EXTEND}]}]"
+  fi
+}
+
+# PATCH ONLY the status message's button row (leaves the embed untouched), used to
+# show/hide Extend as the player count crosses 0<->1. No-op if there's no message.
+set_buttons() { # $1 = components JSON array
+  local url id
+  id=$(aws ssm get-parameter --name "$STATUS_MSG_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "none")
+  if [ -z "$id" ] || [ "$id" = "none" ]; then return 1; fi
+  url=$(get_webhook_url) || return 1
+  if [ -z "$url" ] || [ "$url" = "None" ]; then return 1; fi
+  curl -s -m 10 -H "Content-Type: application/json" -X PATCH "${url}/messages/${id}" \
+    -d "{\"components\": $1}" > /dev/null 2>&1
+}
+
+# 'yes' while the Extend-button grace is still in effect (NOW is before the
+# extend-until instant, stored as epoch-ms). Non-numeric/absent counts as expired.
+extend_active() {
+  local until now_ms
+  until=$(aws ssm get-parameter --name "$EXTEND_UNTIL_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "0")
+  case "$until" in ''|*[!0-9]*) until=0 ;; esac
+  now_ms=$(( $(date +%s) * 1000 ))
+  if [ "$until" -gt "$now_ms" ]; then echo "yes"; else echo "no"; fi
 }
 
 post_discord() { # $1 = title, $2 = description, $3 = color (decimal), $4 = optional JSON embed-fields array
@@ -168,11 +226,11 @@ post_discord() { # $1 = title, $2 = description, $3 = color (decimal), $4 = opti
 # Like post_discord but posts with ?wait=true and stores the created message id in
 # SSM, so the offline lambda can EDIT this readiness message in place (Online ->
 # Offline) instead of posting a second message. Used for the one-per-session ping.
-post_status() { # $1 = title, $2 = description, $3 = color, $4 = optional JSON fields array
+post_status() { # $1=title $2=description $3=color $4=optional fields JSON $5=optional components JSON
   local url payload resp id
   url=$(get_webhook_url) || { log "no webhook configured; skipping Discord post"; return 0; }
   if [ -z "$url" ] || [ "$url" = "None" ]; then log "no webhook configured; skipping Discord post"; return 0; fi
-  payload=$(build_payload "$1" "$2" "$3" "${4:-[]}")
+  payload=$(build_payload "$1" "$2" "$3" "${4:-[]}" "${5:-[]}")
   resp=$(curl -s -m 10 -H "Content-Type: application/json" -X POST "${url}?wait=true" -d "$payload" 2>/dev/null)
   id=$(echo "$resp" | jq -r '.id // empty' 2>/dev/null)
   if [ -n "$id" ]; then put_param "$STATUS_MSG_PARAM" "$id"; else log "WARNING: readiness post failed (no message id captured)"; fi
@@ -181,13 +239,13 @@ post_status() { # $1 = title, $2 = description, $3 = color, $4 = optional JSON f
 # Edit this session's status message in place (Online -> winding down -> Offline).
 # Returns non-zero when there's no message to edit (online was suppressed/off), so
 # callers can fall back to a fresh post. Editing is silent (no re-ping).
-edit_status() { # $1 = title, $2 = description, $3 = color, $4 = optional JSON fields array
+edit_status() { # $1=title $2=description $3=color $4=optional fields JSON $5=optional components JSON
   local url id payload
   id=$(aws ssm get-parameter --name "$STATUS_MSG_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "none")
   if [ -z "$id" ] || [ "$id" = "none" ]; then return 1; fi
   url=$(get_webhook_url) || return 1
   if [ -z "$url" ] || [ "$url" = "None" ]; then return 1; fi
-  payload=$(build_payload "$1" "$2" "$3" "${4:-[]}")
+  payload=$(build_payload "$1" "$2" "$3" "${4:-[]}" "${5:-[]}")
   curl -s -m 10 -H "Content-Type: application/json" -X PATCH "${url}/messages/${id}" -d "$payload" > /dev/null 2>&1 \
     || log "WARNING: status message edit failed"
   return 0
@@ -362,6 +420,12 @@ while true; do
         + (if $awp then [] else [{name: "🔌 Port", value: "```\n\($port)\n```", inline: true}] end)
         + (if $pw   != "" then [{name: "🔑 Password",   value: "||```\n\($pw)\n```||", inline: true}] else [] end)
         + (if $code != "" then [{name: "🎟️ \($codeLabel)", value: "```\n\($code)\n```", inline: true}] else [] end)')
+      # Unified status message: a constant world-name title with a status line
+      # leading the body, so Online -> Winding Down -> Offline reads as ONE message
+      # updating. WTITLE is the title across every state; BTNS is the live-controls
+      # row (Stop always, Extend while idle). Status line carries the 🟢/💤/🛑 cue.
+      WTITLE=$(world_title)
+      BTNS=$(live_controls "$PLAYERS")
       DESC="${JOIN_HINT:-The server is live — connect with the details below.}"
       # Surface the idle auto-shutoff so players know the box turns itself off
       # (same window the idle path below enforces; mirrors /<cmd> status).
@@ -383,11 +447,13 @@ while true; do
         # `/<cmd> join`). post_status captures the id so the lifecycle still edits
         # this one message (cue -> Offline). "Private" here is quiet, not locked —
         # anyone in the channel could /join; true lockout needs a separate world.
-        notify_enabled online && post_status "🔒 Private Session Live" "Run \`${SLASH_CMD} join\` when the bot's status shows it's playing the game. The join address is never posted to the channel. Make the game public with \`${SLASH_CMD} open\`." 10181046
+        notify_enabled online && post_status "$WTITLE" "🔒 **Private — Live**
+Run \`${SLASH_CMD} join\` when the bot's status shows it's playing the game. The join address is never posted to the channel. Make the game public with \`${SLASH_CMD} open\`." 10181046 "[]" "$BTNS"
       else
         # post_status captures the message id so the offline lambda edits THIS
         # message into the offline state (one message, Online -> Offline).
-        notify_enabled online && post_status "🟢 Server Online" "$DESC" 3776160 "$JOIN_FIELDS"
+        notify_enabled online && post_status "$WTITLE" "🟢 **Online**
+$DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
       fi
     fi
   else
@@ -400,6 +466,19 @@ while true; do
   aws ssm put-parameter --name "$PLAYER_COUNT_PARAM" --type String --value "$PLAYERS" --overwrite --region "$REGION" > /dev/null 2>&1
   aws cloudwatch put-metric-data --namespace "$NAMESPACE" --metric-name PlayerCount \
     --value "$PLAYERS" --unit Count --region "$REGION" > /dev/null 2>&1
+
+  # --- Extend button: only useful at 0 players (idle clock is paused otherwise),
+  #     so show/hide it on the 0<->1 crossing by PATCHing just the message's row.
+  #     Edge-triggered off PUBLISHED_BTN so we don't PATCH every cycle. ---
+  if [ "$LIVE" = true ]; then
+    if [ "$PLAYERS" -ge 1 ]; then DESIRED_BTN="hide"; else DESIRED_BTN="show"; fi
+    if [ "$DESIRED_BTN" != "$PUBLISHED_BTN" ]; then
+      if set_buttons "$(live_controls "$PLAYERS")"; then
+        PUBLISHED_BTN="$DESIRED_BTN"
+        log "Extend button -> $DESIRED_BTN (players=$PLAYERS)"
+      fi
+    fi
+  fi
 
   # --- Flavor events -> Discord (deaths, raids, joins; deduped, gated by toggle) ---
   scan_events
@@ -428,6 +507,11 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
   AUTO_SHUTDOWN=$(aws ssm get-parameter --name "$AUTO_SHUTDOWN_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "15")
   if [ "$PLAYERS" -gt 0 ]; then
     echo "$NOW" > "$ACTIVITY_FILE"
+  elif [ -f "$SEEN_LIVE_FLAG" ] && [ "$AUTO_SHUTDOWN" != "off" ] && [ "$AUTO_SHUTDOWN" != "disabled" ] && [ "$(extend_active)" = "yes" ]; then
+    # Extend button pressed: hold off idle-shutdown until the grace expires. When
+    # it does, the next cycle finds ACTIVITY_FILE stale and shuts down promptly —
+    # i.e. "N more minutes, then idle-stop", the intended semantic.
+    log "Idle, but Extend grace is active — holding off shutdown"
   elif [ -f "$SEEN_LIVE_FLAG" ] && [ "$AUTO_SHUTDOWN" != "off" ] && [ "$AUTO_SHUTDOWN" != "disabled" ]; then
     THRESHOLD=$((AUTO_SHUTDOWN * 60))
     LAST=$(cat "$ACTIVITY_FILE" 2>/dev/null || echo "$NOW")
@@ -436,11 +520,13 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
     if [ "$IDLE" -gt "$THRESHOLD" ]; then
       log "Idle threshold exceeded — backing up and shutting down"
       # Edit the live status message (the online ping OR the private cue) into the
-      # winding-down state — editing is silent, so this is correct in a private
-      # session too. Only fall back to a standalone idle notice (a NEW post) when
-      # the session is public AND there's no message to edit (online was off).
+      # winding-down state — same constant world-name title, status line flips to
+      # 💤, join fields + buttons cleared ([] [] ). Editing is silent (correct in a
+      # private session too). Only fall back to a standalone idle notice (a NEW
+      # post) when the session is public AND there's no message to edit.
       IDLE_PRIVATE=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
-      if edit_status "💤 Winding Down" "No players for ${AUTO_SHUTDOWN} min — backing up and shutting down." 16763904; then
+      if edit_status "$(world_title)" "💤 **Winding down** — backing up & shutting down.
+No players for ${AUTO_SHUTDOWN} min." 16763904 "[]" "[]"; then
         log "Edited status message to winding-down"
       elif [ "$IDLE_PRIVATE" != "true" ] && notify_enabled idle; then
         post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904

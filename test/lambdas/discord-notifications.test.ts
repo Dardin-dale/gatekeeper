@@ -143,8 +143,12 @@ describe('Discord Notifications Lambda', () => {
 
       expect(getMockFetch()).toHaveBeenCalled();
       const body = getFetchBody();
-      expect(body.embeds[0].title).toContain('Offline');
+      // Unified lifecycle: title is the constant world name; the 🛑 status moves
+      // into the description; the live-control buttons are cleared.
+      expect(body.embeds[0].title).toBe('TestWorld');
+      expect(body.embeds[0].description).toContain('Offline');
       expect(body.embeds[0].color).toBe(0x95a5a6);
+      expect(body.components).toEqual([]);
     });
 
     test('ignores non-stopped EC2 state changes', async () => {
