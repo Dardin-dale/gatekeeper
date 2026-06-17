@@ -160,7 +160,7 @@ export class GameServerStack extends Stack {
         const instanceType = props?.instanceType || new InstanceType(process.env.INSTANCE_TYPE || ACTIVE_GAME.instanceType);
         const dataVolumeSize = props?.dataVolumeSize || ACTIVE_GAME.dataVolumeSizeGb;
         const backupFrequencyHours = props?.backupFrequencyHours || 24;
-        const backupsToKeep = props?.backupsToKeep || 5;
+        const backupsToKeep = props?.backupsToKeep || parseInt(process.env.BACKUPS_TO_KEEP || '7', 10);
         // Note: Auto-shutdown is controlled by SSM parameter /gatekeeper/<game>/auto-shutdown-minutes (default: 15 minutes)
 
         // Create VPC with a single public subnet
