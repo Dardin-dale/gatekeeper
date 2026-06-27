@@ -153,7 +153,8 @@ You pay only while the server runs, and several brakes bound the worst case:
 - **EBS** ~$2.40/mo for the 30 GB of storage (this is the only always-on cost; the world is RETAIN'd).
 - **No NAT gateway**, 1-day log retention — the classic surprise costs are designed out.
 - **Lambda / API Gateway / S3** — free-tier territory for a friend bot.
-- Optional **AWS Budget** email alert (`BILLING_ALERT_EMAIL` in `.env`).
+- Optional **AWS Budgets** email alerts — per-stack + one account-wide (`BILLING_ALERT_EMAIL` in
+  `.env`; see [`docs/budgets.md`](docs/budgets.md), incl. the one-time cost-allocation-tag step).
 
 **Realistic:** ~$2.50/mo idle floor, ~$5–15/mo with regular play.
 

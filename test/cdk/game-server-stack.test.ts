@@ -47,6 +47,63 @@ describe('GameServerStack', () => {
     });
   });
 
+  describe('Cost guardrail budgets', () => {
+    const prev = {
+      email: process.env.BILLING_ALERT_EMAIL,
+      account: process.env.BILLING_BUDGET_USD,
+      stack: process.env.STACK_BUDGET_USD,
+    };
+
+    function synth(stackId: string): Template {
+      const a = new cdk.App({ context: { testing: true } });
+      const s = new GameServerStack(a, stackId, {
+        env: { account: '123456789012', region: 'us-west-2' },
+      });
+      return Template.fromStack(s);
+    }
+
+    afterAll(() => {
+      // Restore so other suites synth budget-free as before.
+      process.env.BILLING_ALERT_EMAIL = prev.email;
+      process.env.BILLING_BUDGET_USD = prev.account;
+      process.env.STACK_BUDGET_USD = prev.stack;
+    });
+
+    test('no budgets unless BILLING_ALERT_EMAIL is set', () => {
+      delete process.env.BILLING_ALERT_EMAIL;
+      synth('NoEmailStack').resourceCountIs('AWS::Budgets::Budget', 0);
+    });
+
+    test('the default game stack gets a per-stack budget (tag-scoped) + the account-wide budget', () => {
+      process.env.BILLING_ALERT_EMAIL = 'alerts@example.com';
+      process.env.BILLING_BUDGET_USD = '30';
+      process.env.STACK_BUDGET_USD = '13';
+      // No GAME override -> active game is the default (abiotic-factor), so this
+      // stack owns BOTH budgets.
+      const t = synth('GateStack-AbioticFactor');
+
+      t.resourceCountIs('AWS::Budgets::Budget', 2);
+
+      // Per-stack: $13, filtered to this stack's own cloudformation:stack-name tag.
+      t.hasResourceProperties('AWS::Budgets::Budget', {
+        Budget: {
+          BudgetName: 'GateStack-AbioticFactor-monthly-cost',
+          BudgetLimit: { Amount: 13, Unit: 'USD' },
+          CostFilters: { TagKeyValue: ['aws:cloudformation:stack-name$GateStack-AbioticFactor'] },
+        },
+      });
+
+      // Account-wide: $30, no cost filter (whole-account total).
+      t.hasResourceProperties('AWS::Budgets::Budget', {
+        Budget: {
+          BudgetName: 'account-total-monthly-cost',
+          BudgetLimit: { Amount: 30, Unit: 'USD' },
+          CostFilters: Match.absent(),
+        },
+      });
+    });
+  });
+
   describe('EC2 Instance Configuration', () => {
     test('creates an EC2 instance', () => {
       template.resourceCountIs('AWS::EC2::Instance', 1);

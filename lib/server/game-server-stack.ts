@@ -38,7 +38,7 @@ import { CfnBudget } from "aws-cdk-lib/aws-budgets";
 import { Construct } from "constructs";
 import * as path from "path";
 import * as fs from "fs";
-import { ACTIVE_GAME, runtimeProfile, gameDomain } from "../games";
+import { ACTIVE_GAME, DEFAULT_GAME, runtimeProfile, gameDomain } from "../games";
 import { parseWorldConfigsFromJson, getDefaultWorldConfig } from "../lambdas/utils/world-config";
 import {
     RestApi,
@@ -627,48 +627,81 @@ EOF`,
             description: "Minutes of idle grace the Extend button grants per press (or 'off' to disable)",
         });
 
-        // Cost guardrail: an AWS Budget that emails when monthly spend trends past a
+        // Cost guardrails: AWS Budgets that email when monthly spend trends past a
         // threshold. Region-agnostic (unlike a CloudWatch billing alarm) and $0.
-        // Opt-in via .env: set BILLING_ALERT_EMAIL (and optionally BILLING_BUDGET_USD,
-        // default 25). NOTE: AWS Budgets are account-wide, not per-stack — set the
-        // threshold above your normal total (this account also runs huginbot). Fires
-        // on 80% actual spend and on a forecast to exceed 100%, so a runaway (e.g. an
-        // instance stuck on) is caught early.
+        // Opt-in via .env: set BILLING_ALERT_EMAIL. Two layers (see docs/budgets.md):
+        //   1. Per-stack budget — scoped to THIS stack's resources via the
+        //      aws:cloudformation:stack-name cost-allocation tag, so each game is
+        //      tracked on its own (STACK_BUDGET_USD, default 13).
+        //   2. One account-wide budget — unfiltered, the whole-account total incl.
+        //      the domain renewal, tax, and other projects (BILLING_BUDGET_USD,
+        //      default 30). Created by the DEFAULT_GAME stack only, so there is a
+        //      single copy, not one identical clone per stack.
+        // Both fire at 80% actual spend and on a forecast to exceed 100%, so a runaway
+        // (e.g. an instance stuck on) is caught early.
+        // ⚠️ The per-stack filter only captures data once the stack-name tag is
+        // ACTIVATED as a cost-allocation tag — a one-time account-level step that is
+        // NOT deployable via CDK (Billing console, or `aws ce
+        // update-cost-allocation-tags-status`). Until then a per-stack budget reads $0.
         const billingEmail = process.env.BILLING_ALERT_EMAIL;
         if (billingEmail) {
-            const budgetUsd = Number(process.env.BILLING_BUDGET_USD || '25');
+            // 80%-actual + 100%-forecast notifications, shared by both budgets.
+            const subscribers = [{ subscriptionType: "EMAIL", address: billingEmail }];
+            const notificationsWithSubscribers = [
+                {
+                    notification: {
+                        notificationType: "ACTUAL",
+                        comparisonOperator: "GREATER_THAN",
+                        threshold: 80,
+                        thresholdType: "PERCENTAGE",
+                    },
+                    subscribers,
+                },
+                {
+                    notification: {
+                        notificationType: "FORECASTED",
+                        comparisonOperator: "GREATER_THAN",
+                        threshold: 100,
+                        thresholdType: "PERCENTAGE",
+                    },
+                    subscribers,
+                },
+            ];
+
+            const stackBudgetUsd = Number(process.env.STACK_BUDGET_USD || '13');
             new CfnBudget(this, "CostBudget", {
                 budget: {
                     budgetName: `${this.stackName}-monthly-cost`,
                     budgetType: "COST",
                     timeUnit: "MONTHLY",
-                    budgetLimit: { amount: budgetUsd, unit: "USD" },
+                    budgetLimit: { amount: stackBudgetUsd, unit: "USD" },
+                    // Scope to this stack's own resources via the auto-applied tag.
+                    costFilters: { TagKeyValue: [`aws:cloudformation:stack-name$${this.stackName}`] },
                 },
-                notificationsWithSubscribers: [
-                    {
-                        notification: {
-                            notificationType: "ACTUAL",
-                            comparisonOperator: "GREATER_THAN",
-                            threshold: 80,
-                            thresholdType: "PERCENTAGE",
-                        },
-                        subscribers: [{ subscriptionType: "EMAIL", address: billingEmail }],
-                    },
-                    {
-                        notification: {
-                            notificationType: "FORECASTED",
-                            comparisonOperator: "GREATER_THAN",
-                            threshold: 100,
-                            thresholdType: "PERCENTAGE",
-                        },
-                        subscribers: [{ subscriptionType: "EMAIL", address: billingEmail }],
-                    },
-                ],
+                notificationsWithSubscribers,
             });
             new CfnOutput(this, "BillingBudget", {
-                value: `$${budgetUsd}/mo -> ${billingEmail}`,
-                description: "Monthly AWS Budget alert (account-wide)",
+                value: `$${stackBudgetUsd}/mo (this stack) -> ${billingEmail}`,
+                description: `Per-stack AWS Budget alert for ${this.stackName}`,
             });
+
+            // Account-wide total: exactly one, owned by the default game's stack.
+            if (ACTIVE_GAME.id === DEFAULT_GAME) {
+                const accountBudgetUsd = Number(process.env.BILLING_BUDGET_USD || '30');
+                new CfnBudget(this, "AccountCostBudget", {
+                    budget: {
+                        budgetName: "account-total-monthly-cost",
+                        budgetType: "COST",
+                        timeUnit: "MONTHLY",
+                        budgetLimit: { amount: accountBudgetUsd, unit: "USD" },
+                    },
+                    notificationsWithSubscribers,
+                });
+                new CfnOutput(this, "AccountBillingBudget", {
+                    value: `$${accountBudgetUsd}/mo (account-wide) -> ${billingEmail}`,
+                    description: "Account-wide AWS Budget alert (all stacks + untagged spend)",
+                });
+            }
         }
 
         // Note: Discord webhooks are now stored in SSM Parameter Store
