@@ -23,6 +23,8 @@ npm run cli backup pull [name|latest]        # download a backup to ./local/back
 npm run cli backup create                    # trigger a backup on the running server
 npm run cli backup restore [name|latest]     # restore a backup onto the running server
 
+npm run cli world add <name> --password=<pw> # add a world to config/<game>.worlds.json (local)
+npm run cli world switch [name]              # set/show a guild's default world (what a bare /<cmd> start loads)
 npm run cli world push <dir|tar.gz|name>     # upload a local save as a seed archive
 npm run cli world pull [name|latest]         # download a seed archive to ./local/seeds/<game-id>
 npm run cli world list                       # list uploaded seed archives
@@ -37,11 +39,19 @@ npm run cli mods remove <name>               # remove a mod from the library
 npm run cli config show                      # show runtime tunables (idle/boot timers)
 npm run cli config set auto-shutdown <min>   # retune the idle auto-shutdown window live
 npm run cli config set boot-timeout <min>    # retune the boot-timeout safety net live
+npm run cli config reconstruct [--env]       # rebuild gitignored config/ (+ .env) from the live deploy
 ```
 
 - **`backup list`** — backups live at `s3://<backup-bucket>/backups/<game-id>/<timestamp>.tar.gz`
   (written by `scripts/game/backup-server.sh`, which archives the whole data/saves volume). The
   newest `BACKUPS_TO_KEEP` per game are kept; older ones rotate out daily.
+- **`world add`** — append a world to the gitignored `config/<game>.worlds.json` instead of hand-editing.
+  Flags: `--password=<pw>` (required), `--guild=<discordServerId>` (inferred when the roster already
+  uses exactly one), `--world=<save>` (on-disk save name; defaults to an ASCII-folded/transliterated
+  form of `<name>`, e.g. `Emmumóðir`→`Emmumodir`), `--default`, `--admins="id1 id2"`,
+  `--args="<launch args>"`, `--mods=A,B`. Validates like the deploy-time gate and rejects duplicate
+  names/save-names. **Local only** — the roster is baked into the Lambda `WORLDS_JSON` at synth, so a
+  new world goes live on the next `npm run deploy`; it never touches the running server.
 - **`backup pull` / `world pull`** — download to `./local/backups/<game-id>/` and
   `./local/seeds/<game-id>/` respectively. `latest` (default) grabs the newest; or pass a
   filename from the matching `list` command.
@@ -53,6 +63,12 @@ npm run cli config set boot-timeout <min>    # retune the boot-timeout safety ne
   their `mods` array in `config/<game>.worlds.json`, installed by the host on world start. The full
   model + per-game walkthroughs (Abiotic Factor/Nexus, Valheim/Thunderstore): `docs/mods.md`.
   `mods add` zip handling shells out to `unzip` (install it locally if missing).
+- **`world switch [name]`** — set (or, with no name, show) a guild's **default** world: the SSM param
+  (`/gatekeeper/<game>/discord/<guild>/default-world`) that a bare `/<cmd> start` resolves, also shown
+  with a ▶️ by `/<cmd> worlds`. Infers `--guild` when the roster uses exactly one (else pass it);
+  validates the world belongs to that guild. This is **durable config**, not the live `active-world`
+  that `/start` rewrites — so it never restarts or disturbs a running session; it applies on the next
+  start. `--dry` previews the change without writing. It's the only writer of this param.
 - **`config show` / `config set`** — the two cost-guardrail timers the on-host monitor reads from
   SSM each cycle: `auto-shutdown` (idle minutes before backup+stop) and `boot-timeout` (minutes to
   wait for first liveness before stopping a wedged boot). Their deploy-time default is the
@@ -61,8 +77,13 @@ npm run cli config set boot-timeout <min>    # retune the boot-timeout safety ne
   SSM param live — no redeploy, no restart; the monitor picks it up within ~one cycle. A subsequent
   deploy only re-asserts the value when the profile/env default itself changes, so a CLI override
   survives ordinary deploys. Pass `off` (or `disabled`) to turn a guard off.
-
-## Local directory layout
+- **`config reconstruct`** — the recovery path for a fresh machine that never got a copy of the
+  gitignored config. Reads the **deployed CloudFormation template** (one read-only `GetTemplate`) and
+  rebuilds `config/<game>.worlds.json` and `config/<game>.discord.json` from the Lambda env baked into
+  it; `--env` also rebuilds the shared `.env` (`BASE_DOMAIN`, `BOT_OWNER_IDS`, `SCHEDULE_TZ`,
+  `BILLING_ALERT_EMAIL` from the budget resource, region — Discord secrets stay in `discord.json`).
+  Skips files that already exist unless `--force`, so it never clobbers local edits. Run it per game
+  (`GAME=<id>`); nothing is deployed. See the memory note "config-reconstruction" for the source-map.
 
 Everything the CLI and the local test server touch on your machine lives under `./local/`
 (gitignored as a whole — machine-local scratch, safe to delete), organized by purpose, then game:

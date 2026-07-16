@@ -21,6 +21,10 @@ Usage:
   npm run cli backup create                  Trigger a backup on the running server
   npm run cli backup restore [name|latest]   Restore a backup onto the running server
 
+  npm run cli world add <name> --password=<pw> Add a world to config/<game>.worlds.json
+                                             (--guild --world --default --admins --args --mods; local, deploy to apply)
+  npm run cli world switch [name]            Set (or show) a guild's default world — what a bare /<cmd> start loads
+                                             (--guild to pick the server, --dry to preview; live SSM, no restart)
   npm run cli world push <dir|tar.gz> [name] Upload a local save as a seed archive
                                              (bare names resolve in ./local/seeds/<game>)
   npm run cli world pull [name|latest]       Download a seed archive to ./local/seeds/<game>
@@ -37,6 +41,8 @@ Usage:
 
   npm run cli config show                     Show runtime tunables (idle/boot timers)
   npm run cli config set <key> <min|off>      Retune auto-shutdown | boot-timeout live
+  npm run cli config reconstruct [--env]      Rebuild gitignored config/ (and .env) from the live deploy
+                                             (--force overwrites; safe/read-only against AWS)
 
 Notes:
   - Server start/stop/status are Discord commands: /gate start | stop | status
@@ -55,6 +61,8 @@ async function main() {
   }
 
   if (group === 'world') {
+    if (sub === 'add') return world.add(...rest);
+    if (sub === 'switch') return world.switchDefault(...rest);
     if (sub === 'push') return world.push(rest[0], rest[1]);
     if (sub === 'pull') return world.pull(rest[0]);
     if (sub === 'list') return world.list();
@@ -76,6 +84,7 @@ async function main() {
   if (group === 'config') {
     if (sub === 'show' || sub === 'list') return config.show();
     if (sub === 'set') return config.set(rest[0], rest[1]);
+    if (sub === 'reconstruct' || sub === 'pull') return config.reconstruct(...rest);
   }
 
   usage();
