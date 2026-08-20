@@ -6,6 +6,7 @@
  */
 
 const { REST } = require('@discordjs/rest');
+const { permissionsInteger } = require('./cli/commands/discord');
 const { Routes } = require('discord-api-types/v10');
 const fs = require('fs');
 const path = require('path');
@@ -73,8 +74,12 @@ async function registerCommands() {
     console.log('4. Use /setup in a Discord channel to configure notifications');
     console.log('');
     console.log('🔗 Bot invite URL (if needed):');
-    // 536873984 = View Channels (1024) + Send Messages (2048) + Manage Webhooks (536870912)
-    console.log(`https://discord.com/api/oauth2/authorize?client_id=${appId}&permissions=536873984&scope=bot%20applications.commands`);
+    // Permissions come from the one place they're defined (cli/commands/discord.js).
+    // This used to hard-code 536873984, which predated the pinned status message
+    // and silently omitted Manage Messages — following it produced a bot that
+    // could post but never pin. Derive it so the two can't drift again.
+    console.log(`https://discord.com/oauth2/authorize?client_id=${appId}`
+      + `&scope=bot+applications.commands&permissions=${permissionsInteger()}`);
     
   } catch (error) {
     console.error('❌ Failed to register Discord commands:', error);
