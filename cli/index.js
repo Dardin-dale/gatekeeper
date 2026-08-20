@@ -38,6 +38,7 @@ Usage:
   npm run cli mods remove <name>             Remove a mod from the library
 
   npm run cli discord put-token              Seed the bot token to SSM (presence sidecar)
+  npm run cli discord invite-url             Print this game's install/permission URL
 
   npm run cli config show                     Show runtime tunables (idle/boot timers)
   npm run cli config set <key> <min|off>      Retune auto-shutdown | boot-timeout live
@@ -79,6 +80,7 @@ async function main() {
 
   if (group === 'discord') {
     if (sub === 'put-token') return discord.putToken();
+    if (sub === 'invite-url') return discord.inviteUrl();
   }
 
   if (group === 'config') {

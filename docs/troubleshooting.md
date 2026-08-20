@@ -648,6 +648,29 @@ aws logs filter-log-events \
 
 ---
 
+## Status message isn't pinned
+
+The host logs one of these:
+
+```
+WARNING: pin refused (403) — the bot needs Manage Messages in channel <id>
+WARNING: no bot token at /gatekeeper/<game>/discord-bot-token — cannot pin
+```
+
+GATEKeeper keeps one durable status message per Discord server, pinned once and
+edited in place every session. Webhooks post it but **cannot pin** — a webhook
+has no identity to act as — so the pin uses the bot token.
+
+1. **403** — the bot lacks `Manage Messages`. Re-authorize with a wider
+   permission set: `npm run cli discord invite-url`, open it, pick the server the
+   bot is already in, Authorize. If it still 403s, a **channel overwrite** is
+   denying it (channel overwrites beat server roles): right-click the channel →
+   Edit Channel → Permissions → allow `Manage Messages` for the bot's role.
+2. **No bot token** — seed it: `npm run cli discord put-token`.
+
+Pinning is best-effort: the status message still posts and still updates in place
+without it. Fix the permission and it pins on the next session.
+
 ## Getting Help
 
 If you're still stuck:

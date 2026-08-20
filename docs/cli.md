@@ -36,6 +36,9 @@ npm run cli mods import <Ns/Mod[@ver]>       # import from Thunderstore (games w
 npm run cli mods info <name>                 # a mod's metadata + files
 npm run cli mods remove <name>               # remove a mod from the library
 
+npm run cli discord invite-url               # print this game's install / permission URL
+npm run cli discord put-token                # seed the bot token to SSM (presence sidecar)
+
 npm run cli config show                      # show runtime tunables (idle/boot timers)
 npm run cli config set auto-shutdown <min>   # retune the idle auto-shutdown window live
 npm run cli config set boot-timeout <min>    # retune the boot-timeout safety net live
@@ -69,6 +72,18 @@ npm run cli config reconstruct [--env]       # rebuild gitignored config/ (+ .en
   validates the world belongs to that guild. This is **durable config**, not the live `active-world`
   that `/start` rewrites — so it never restarts or disturbs a running session; it applies on the next
   start. `--dry` previews the change without writing. It's the only writer of this param.
+- **`discord invite-url`** — prints the OAuth2 install URL for the active game's Discord
+  application, with the permission integer derived from named flags (so it's auditable, not a
+  magic number). Use it for the first install **and** to widen permissions later: Discord has no
+  way for a bot to request more permissions, so re-running the same link on a server the bot is
+  already in is how you grant them. Re-authorizing doesn't kick the bot, change its token, or
+  re-register commands. Each game is a separate application, so the URL is per-game and built from
+  *your* `config/<game>.discord.json` (or `.env`) — never reuse another deployment's link, it would
+  add their bot. ⚠️ Channel permission overwrites take precedence over the server-level role this
+  grants; see `docs/discord-setup.md`.
+- **`discord put-token`** — seeds `/gatekeeper/<game>/discord-bot-token` (SecureString) for the
+  presence sidecar and the status-message pin. CloudFormation can't create SecureStrings, so this
+  is a one-time out-of-band step per game.
 - **`config show` / `config set`** — the two cost-guardrail timers the on-host monitor reads from
   SSM each cycle: `auto-shutdown` (idle minutes before backup+stop) and `boot-timeout` (minutes to
   wait for first liveness before stopping a wedged boot). Their deploy-time default is the

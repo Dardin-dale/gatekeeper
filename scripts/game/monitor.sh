@@ -303,7 +303,7 @@ pin_message() { # $1 = channel id, $2 = message id
     "https://discord.com/api/v10/channels/$1/pins/$2")
   case "$code" in
     204|200) log "Pinned status message $2 in channel $1"; return 0 ;;
-    403) log "WARNING: pin refused (403) — the bot needs Manage Messages in channel $1"; return 1 ;;
+    403) log "WARNING: pin refused (403) — the bot needs Manage Messages in channel $1 (re-invite: 'npm run cli discord invite-url'; note channel overwrites beat server roles)"; return 1 ;;
     *)   log "WARNING: pin failed (HTTP $code) for message $2"; return 1 ;;
   esac
 }

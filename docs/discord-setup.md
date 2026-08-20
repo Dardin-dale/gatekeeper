@@ -92,15 +92,30 @@ You'll now see your application's settings page.
 
 3. **Select Bot Permissions**
    Scroll down and check these permissions:
-   - ✅ `Send Messages` - Required to send server status and notifications
-   - ✅ `Manage Webhooks` - Required for the `/setup` command
-   - ✅ `Use Slash Commands` - Required for all bot interactions
-   - ✅ `Embed Links` - Optional but recommended for rich embeds
+   - ✅ `View Channel` - See the channel the status message lives in
+   - ✅ `Send Messages` - Fallback posts (persona posts go through the webhook)
+   - ✅ `Manage Messages` - **Pin** the durable status message (see below)
+   - ✅ `Embed Links` - Rich embeds
+   - ✅ `Read Message History` - Required alongside `Manage Messages` to pin
+   - ✅ `Manage Webhooks` - Required for the `/<cmd> setup` command
 
 4. **Copy the Generated URL**
    - At the bottom, you'll see a "Generated URL"
    - Click "Copy" to copy this URL
    - **Keep this URL** - you'll use it to add the bot to your server
+
+> **Shortcut — let the CLI build it.** Rather than clicking through the generator
+> (and risking a mismatched permission set), print the exact URL for the active
+> game, with the permission integer derived from named flags:
+>
+> ```bash
+> npm run cli discord invite-url            # active GAME
+> GAME=valheim npm run cli discord invite-url
+> ```
+>
+> Each game is a separate Discord application with its own id, so the URL is
+> per-game and is generated from *your* `config/<game>.discord.json` (or `.env`).
+> Never reuse someone else's invite link — it would add THEIR bot, not yours.
 
 ## Step 6: Add Bot to Your Discord Server
 
@@ -119,6 +134,46 @@ You'll now see your application's settings page.
 4. **Verify Bot Joined**
    - Check your Discord server's member list
    - You should see your bot (it will appear offline — that's normal for HTTP-interactions bots)
+
+## Updating Permissions Later
+
+Discord has **no mechanism for a bot to request additional permissions** at
+runtime — a bot cannot prompt you, and there is no in-app upgrade flow. The only
+way to widen an already-installed bot's permissions is to re-run the OAuth2
+authorization with a larger `permissions` integer, which updates the bot's
+managed role in that guild.
+
+```bash
+npm run cli discord invite-url    # same link as a first install
+```
+
+Open it, pick the server the bot is **already** in, and Authorize. This is
+non-destructive: the bot is not kicked, its token is unchanged, and registered
+slash commands are untouched.
+
+> ⚠️ **Channel overwrites beat role permissions.** Discord resolves channel-level
+> overwrites *after* server-level roles, so a channel that explicitly denies a
+> permission (directly on the bot's role, or inherited from an `@everyone` deny)
+> wins over anything the invite link grants. If a permission still doesn't work
+> after re-authorizing, fix it on the channel: right-click the channel → **Edit
+> Channel** → **Permissions**.
+
+### Why `Manage Messages`
+
+GATEKeeper keeps **one durable status message per Discord server**: created and
+pinned once, then edited in place for every session afterwards (Starting →
+Online → Offline). That's why the bot needs `Manage Messages` — and why it needs
+a bot token at all for this. Webhooks post the message but **cannot pin it**; a
+webhook has no identity to act as, so the pin call uses the bot.
+
+Pinning is best-effort. Without the permission the host logs
+
+```
+WARNING: pin refused (403) — the bot needs Manage Messages in channel <id>
+```
+
+and everything else still works — the status message posts and updates normally,
+it just isn't pinned. Grant the permission and it pins on the next session.
 
 ## Step 7: Deploy GATEKeeper Infrastructure
 

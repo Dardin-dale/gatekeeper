@@ -53,6 +53,14 @@ lib/games/
   top-level `/gate` command with subcommands.
 - **Notifications**: the host posts readiness/idle/backup messages directly to the guild webhook;
   one Lambda (`discord-notifications.ts`) posts the final "server offline" on the EC2-stopped event.
+- **Status message**: ONE durable message per guild, created and **pinned** once
+  (`pinned-status/<guild-id>` in SSM) then edited in place across sessions — Starting → Online →
+  Winding down → Offline. Webhooks can't pin, so the pin call uses the bot token; a missing
+  `Manage Messages` degrades to unpinned, never to broken. The per-session TTL delete skips it.
+- **Boot visibility**: `GameProfile.bootPhases` name the pre-live stages (updating / verifying /
+  loading / **failed**) scraped from container logs, published to SSM `boot-phase` and rendered by
+  `/<cmd> status` + the status message. A `failure: true` phase wins over any later phase — a
+  server whose update failed keeps logging later stages while being unjoinable.
 - **Domain (optional)**: set `BASE_DOMAIN` → each game gets `<subdomain>.<BASE_DOMAIN>` (e.g.
   `abiotic.gjurdsihop.net`) in one shared Route 53 zone, updated to the instance IP on start.
 
@@ -66,6 +74,7 @@ lib/games/
 | Deploy | `source .env && npm run deploy` (`cdk deploy --all`) |
 | CLI | `npm run cli` (see `docs/cli.md`) |
 | Register slash commands | `npm run register-commands` |
+| Bot install / permission URL | `npm run cli discord invite-url` |
 | Local AF container | `docker compose -f docker-compose.local.yml up` |
 | Local A2S check | `node scripts/game/a2s-query.js 127.0.0.1 27015` |
 
