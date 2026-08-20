@@ -9,6 +9,7 @@ const backup = require('./commands/backup');
 const world = require('./commands/world');
 const mods = require('./commands/mods');
 const discord = require('./commands/discord');
+const worlds = require('./commands/worlds');
 const config = require('./commands/config');
 const { GAME_ID, STACK_NAME } = require('./lib/context');
 
@@ -37,6 +38,8 @@ Usage:
   npm run cli mods info <name>               Show a mod's metadata
   npm run cli mods remove <name>             Remove a mod from the library
 
+  npm run cli worlds list                    Compare local worlds config against the deployed one
+  npm run cli worlds pull                    Recover config/<game>.worlds.json from the deployed stack
   npm run cli discord put-token              Seed the bot token to SSM (presence sidecar)
   npm run cli discord invite-url             Print this game's install/permission URL
 
@@ -76,6 +79,11 @@ async function main() {
     if (sub === 'import') return mods.importMod(...rest);
     if (sub === 'info') return mods.info(rest[0]);
     if (sub === 'remove') return mods.remove(rest[0]);
+  }
+
+  if (group === 'worlds') {
+    if (sub === 'list') return worlds.list();
+    if (sub === 'pull') return worlds.pull();
   }
 
   if (group === 'discord') {

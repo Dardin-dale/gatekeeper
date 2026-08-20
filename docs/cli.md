@@ -36,6 +36,9 @@ npm run cli mods import <Ns/Mod[@ver]>       # import from Thunderstore (games w
 npm run cli mods info <name>                 # a mod's metadata + files
 npm run cli mods remove <name>               # remove a mod from the library
 
+npm run cli worlds list                      # compare local worlds config against the deployed one
+npm run cli worlds pull                      # recover config/<game>.worlds.json from the deployed stack
+
 npm run cli discord invite-url               # print this game's install / permission URL
 npm run cli discord put-token                # seed the bot token to SSM (presence sidecar)
 
@@ -72,6 +75,14 @@ npm run cli config reconstruct [--env]       # rebuild gitignored config/ (+ .en
   validates the world belongs to that guild. This is **durable config**, not the live `active-world`
   that `/start` rewrites — so it never restarts or disturbs a running session; it applies on the next
   start. `--dry` previews the change without writing. It's the only writer of this param.
+- **`worlds list` / `worlds pull`** — `config/<game>.worlds.json` is gitignored (it holds per-world
+  passwords), so it's unversioned and machine-local. The stack reads it into `WORLDS_JSON` at synth,
+  which means editing it on one machine and deploying from another **silently narrows the deployed
+  world list**. `worlds list` diffs local against deployed and warns when a deploy would remove
+  worlds; `worlds pull` rewrites the local file verbatim from the deployed value (backing up the
+  existing one to `.bak` first). Run `worlds list` before any deploy from a machine you don't
+  normally deploy from. Removing a world from the bot never touches its save — those live on the
+  EBS data volume.
 - **`discord invite-url`** — prints the OAuth2 install URL for the active game's Discord
   application, with the permission integer derived from named flags (so it's auditable, not a
   magic number). Use it for the first install **and** to widen permissions later: Discord has no
