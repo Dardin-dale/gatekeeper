@@ -1,6 +1,6 @@
 import { APIGatewayProxyResult } from "aws-lambda";
-import { GetParameterCommand, PutParameterCommand } from "@aws-sdk/client-ssm";
-import { ssmClient, withRetry } from "../utils/aws-clients";
+import { GetParameterCommand, PutParameterCommand, SendCommandCommand } from "@aws-sdk/client-ssm";
+import { ssmClient, withRetry, SERVER_INSTANCE_ID } from "../utils/aws-clients";
 import { SSM_PARAMS, getExtendMinutes } from "../utils/params";
 import { InteractionResponseType } from "./types";
 import { handleStatusCommand } from "./status";
@@ -13,6 +13,7 @@ import { handleOpenCommand } from "./open";
 // Cancel here re-renders the same live-controls row the host first posted.
 //   gk_stop  → confirm row → gk_stop_confirm / gk_stop_cancel   (two-click guard)
 //   gk_extend → adds idle grace          gk_open → flip private session public
+//   gk_restart → re-run the game server unit (failed-boot message only)
 // ---------------------------------------------------------------------------
 const BTN_STOP = { type: 2, style: 4, label: "🛑 Stop", custom_id: "gk_stop" };
 const BTN_EXTEND = { type: 2, style: 1, label: "⏰ Extend", custom_id: "gk_extend" };
@@ -95,6 +96,14 @@ export async function handleComponentInteraction(body: any): Promise<APIGatewayP
     case "gk_extend":
       return await handleExtendButton();
 
+    // Restart, offered only on a failed-boot status message: re-runs the game
+    // server unit, which re-attempts the update that failed. Cheap and safe
+    // (the instance and the data volume are untouched), so it needs no confirm
+    // step — unlike Stop, a mis-click here costs a couple of minutes, not a
+    // session. If it fails a second time the files need a manual reinstall.
+    case "gk_restart":
+      return await handleRestartButton();
+
     default:
       // Unknown / future button — ack silently so Discord doesn't show an error.
       return {
@@ -102,6 +111,33 @@ export async function handleComponentInteraction(body: any): Promise<APIGatewayP
         body: JSON.stringify({ type: InteractionResponseType.DEFERRED_UPDATE_MESSAGE }),
       };
   }
+}
+
+/**
+ * Restart the game server container in place: `systemctl restart game-server` on
+ * the host, which re-runs the image entrypoint (and therefore the update step
+ * that failed). Fire-and-forget — the host monitor takes over reporting from
+ * there, republishing boot phases into this same status message.
+ */
+async function handleRestartButton(): Promise<APIGatewayProxyResult> {
+  try {
+    await withRetry(() => ssmClient.send(new SendCommandCommand({
+      DocumentName: "AWS-RunShellScript",
+      InstanceIds: [SERVER_INSTANCE_ID],
+      Parameters: { commands: ["systemctl restart game-server"] },
+      Comment: "Restart triggered from a failed-boot status message",
+    })));
+  } catch (err) {
+    console.error("Restart command failed to dispatch:", err);
+    return ephemeralAck(
+      "⚠️ Couldn't reach the server host to restart it. It may already be shutting down — " +
+      "check with `status`.",
+    );
+  }
+  return ephemeralAck(
+    "🔄 Restarting the server — it re-runs the game update on the way up. " +
+    "Progress posts to the status message; it usually takes a few minutes.",
+  );
 }
 
 /**

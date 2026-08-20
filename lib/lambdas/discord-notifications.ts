@@ -6,6 +6,8 @@ import {
   getActiveGuildId,
   getActiveWorldName,
   getMessageTtlHours,
+  getPinnedStatusParam,
+  getRawParam,
   getSessionPrivate,
   getStatusMessageId,
   getWebhookForGuild,
@@ -33,6 +35,18 @@ async function scheduleStatusMessageDeletion(messageId: string): Promise<void> {
   }
   const guildId = await getActiveGuildId();
   if (!guildId) { console.log('No guild resolved; skipping TTL deletion'); return; }
+  // A durable PINNED status message is edited across sessions, so the per-session
+  // TTL must never delete it — that would silently unpin the channel's one
+  // permanent status post and strand the SSM pointer at a dead message id.
+  const pinned = await getRawParam(getPinnedStatusParam(guildId));
+  if (pinned && pinned !== 'none') {
+    try {
+      if (JSON.parse(pinned)?.messageId === messageId) {
+        console.log(`Message ${messageId} is the pinned status message; not scheduling deletion`);
+        return;
+      }
+    } catch { /* unparseable pin record: fall through and treat as not pinned */ }
+  }
   const fireAt = new Date(Date.now() + ttlHours * 3_600_000).toISOString().slice(0, 19);
   try {
     await schedulerClient.send(new CreateScheduleCommand({

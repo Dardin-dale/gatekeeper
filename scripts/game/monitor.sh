@@ -89,6 +89,9 @@ ACTIVE_WORLD_PARAM="/gatekeeper/${GAME_ID}/active-world"
 JOIN_CODE_PARAM="/gatekeeper/${GAME_ID}/join-code"
 SERVER_LIVE_PARAM="/gatekeeper/${GAME_ID}/server-live"
 BOOT_PHASE_PARAM="/gatekeeper/${GAME_ID}/boot-phase"       # JSON of the current pre-live stage; 'none' once live
+PINNED_STATUS_PREFIX="/gatekeeper/${GAME_ID}/pinned-status" # per-guild durable pinned message: {messageId,channelId}
+BOT_TOKEN_PARAM="/gatekeeper/${GAME_ID}/discord-bot-token"  # SecureString; the pin API needs a bot, webhooks can't pin
+SESSION_STARTER_PARAM="/gatekeeper/${GAME_ID}/session-starter" # who ran /<cmd> start, pinged when a boot fails
 SESSION_PRIVATE_PARAM="/gatekeeper/${GAME_ID}/session-private" # 'true' = quiet session: skip the public online ping
 STATUS_MSG_PARAM="/gatekeeper/${GAME_ID}/status-message-id"    # readiness message id; the offline lambda edits it in place
 EXTEND_MINUTES_PARAM="/gatekeeper/${GAME_ID}/extend-minutes"   # Extend button: minutes of idle grace per press ('off' = disabled)
@@ -99,6 +102,7 @@ DISPLAY_NAME=$(jq -r '.displayName // "Server"' "$PROFILE")    # fallback status
 # lib/lambdas/commands/component.ts (a Cancel there re-renders this same row).
 BTN_STOP='{"type":2,"style":4,"label":"🛑 Stop","custom_id":"gk_stop"}'
 BTN_EXTEND='{"type":2,"style":1,"label":"⏰ Extend","custom_id":"gk_extend"}'
+BTN_RESTART='{"type":2,"style":1,"label":"🔄 Restart server","custom_id":"gk_restart"}'
 
 put_param() { # $1 = name, $2 = value (best-effort)
   aws ssm put-parameter --name "$1" --type String --value "$2" --overwrite \
@@ -168,12 +172,15 @@ notify_enabled() { # $1 = category
 # $5 (components) is always emitted — pass [] to explicitly CLEAR buttons on an
 # edit (a webhook message-edit leaves omitted fields unchanged, so [] is required
 # to remove them at winding-down/offline).
-build_payload() { # $1=title $2=description $3=color $4=optional fields JSON $5=optional components JSON
+build_payload() { # $1=title $2=description $3=color $4=fields JSON $5=components JSON $6=optional content (pings)
   jq -n --arg name "$PERSONA_NAME" --arg icon "$PERSONA_ICON" --arg thumb "$PERSONA_THUMB" \
     --arg footer "$PERSONA_FOOTER" \
     --arg title "$1" --arg desc "$2" --argjson color "$3" --argjson fields "${4:-[]}" \
-    --argjson components "${5:-[]}" \
+    --argjson components "${5:-[]}" --arg content "${6:-}" \
     '{username: $name, embeds: [{title: $title, description: $desc, color: $color}], components: $components}
+     | if $content != "" then .content = $content
+         | .allowed_mentions = {parse: [], users: ([$content | scan("<@!?([0-9]+)>")] | flatten)}
+       else . end
      | if $desc == "" then .embeds[0] |= del(.description) else . end
      | if $footer != "" then .embeds[0].footer = {text: $footer} else . end
      | if ($fields | length) > 0 then .embeds[0].fields = $fields else . end
@@ -240,7 +247,7 @@ post_status() { # $1=title $2=description $3=color $4=optional fields JSON $5=op
   local url payload resp id
   url=$(get_webhook_url) || { log "no webhook configured; skipping Discord post"; return 0; }
   if [ -z "$url" ] || [ "$url" = "None" ]; then log "no webhook configured; skipping Discord post"; return 0; fi
-  payload=$(build_payload "$1" "$2" "$3" "${4:-[]}" "${5:-[]}")
+  payload=$(build_payload "$1" "$2" "$3" "${4:-[]}" "${5:-[]}" "${6:-}")
   resp=$(curl -s -m 10 -H "Content-Type: application/json" -X POST "${url}?wait=true" -d "$payload" 2>/dev/null)
   id=$(echo "$resp" | jq -r '.id // empty' 2>/dev/null)
   if [ -n "$id" ]; then put_param "$STATUS_MSG_PARAM" "$id"; else log "WARNING: readiness post failed (no message id captured)"; fi
@@ -255,17 +262,92 @@ edit_status() { # $1=title $2=description $3=color $4=optional fields JSON $5=op
   if [ -z "$id" ] || [ "$id" = "none" ]; then return 1; fi
   url=$(get_webhook_url) || return 1
   if [ -z "$url" ] || [ "$url" = "None" ]; then return 1; fi
-  payload=$(build_payload "$1" "$2" "$3" "${4:-[]}" "${5:-[]}")
+  payload=$(build_payload "$1" "$2" "$3" "${4:-[]}" "${5:-[]}" "${6:-}")
   curl -s -m 10 -H "Content-Type: application/json" -X PATCH "${url}/messages/${id}" -d "$payload" > /dev/null 2>&1 \
     || log "WARNING: status message edit failed"
   return 0
+}
+
+# The active world's guild id (the pinned message is per-Discord-server).
+active_guild() {
+  aws ssm get-parameter --name "$ACTIVE_WORLD_PARAM" --region "$REGION" --query "Parameter.Value" \
+    --output text 2>/dev/null | jq -r '.discordServerId // empty' 2>/dev/null
+}
+
+# The guild's durable pinned status message as "<messageId> <channelId>", or
+# nothing when this guild has no pinned message yet.
+pinned_status() {
+  local guild v
+  guild=$(active_guild) || return 1
+  [ -z "$guild" ] && return 1
+  v=$(aws ssm get-parameter --name "${PINNED_STATUS_PREFIX}/${guild}" --region "$REGION" \
+        --query 'Parameter.Value' --output text 2>/dev/null) || return 1
+  case "$v" in ''|None|none) return 1 ;; esac
+  echo "$v" | jq -r 'if .messageId and .channelId then "\(.messageId) \(.channelId)" else empty end' 2>/dev/null
+}
+
+# Pin a message with the BOT token — webhooks cannot pin, so this is the one
+# place the monitor needs the bot identity. Requires MANAGE_MESSAGES in the
+# channel; a 403 here means the bot is missing that permission (logged, not
+# fatal: an unpinned status message still works, it just isn't pinned).
+pin_message() { # $1 = channel id, $2 = message id
+  local token code
+  token=$(aws ssm get-parameter --name "$BOT_TOKEN_PARAM" --with-decryption --region "$REGION" \
+            --query 'Parameter.Value' --output text 2>/dev/null)
+  if [ -z "$token" ] || [ "$token" = "None" ]; then
+    log "WARNING: no bot token at $BOT_TOKEN_PARAM — cannot pin (seed it with 'npm run cli discord put-token')"
+    return 1
+  fi
+  code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 -X PUT \
+    -H "Authorization: Bot ${token}" -H "Content-Length: 0" \
+    "https://discord.com/api/v10/channels/$1/pins/$2")
+  case "$code" in
+    204|200) log "Pinned status message $2 in channel $1"; return 0 ;;
+    403) log "WARNING: pin refused (403) — the bot needs Manage Messages in channel $1"; return 1 ;;
+    *)   log "WARNING: pin failed (HTTP $code) for message $2"; return 1 ;;
+  esac
+}
+
+# Create the guild's durable status message: post it, PIN it, and remember
+# {messageId,channelId} so every later session edits this same message instead of
+# posting a new one. The webhook's ?wait=true response carries the channel_id we
+# need for the pin — which is why creation happens here and not in a Lambda.
+create_pinned_status() { # $1=title $2=description $3=color $4=fields $5=components
+  local url payload resp id channel guild
+  guild=$(active_guild); [ -z "$guild" ] && return 1
+  url=$(get_webhook_url) || return 1
+  [ -z "$url" ] || [ "$url" = "None" ] && return 1
+  payload=$(build_payload "$1" "$2" "$3" "${4:-[]}" "${5:-[]}" "${6:-}")
+  resp=$(curl -s -m 10 -H "Content-Type: application/json" -X POST "${url}?wait=true" -d "$payload" 2>/dev/null)
+  id=$(echo "$resp" | jq -r '.id // empty' 2>/dev/null)
+  channel=$(echo "$resp" | jq -r '.channel_id // empty' 2>/dev/null)
+  [ -z "$id" ] || [ -z "$channel" ] && { log "WARNING: could not create pinned status message"; return 1; }
+  pin_message "$channel" "$id" || true   # keep the message even if pinning is refused
+  put_param "${PINNED_STATUS_PREFIX}/${guild}" "$(jq -nc --arg m "$id" --arg c "$channel" '{messageId: $m, channelId: $c}')"
+  # The offline Lambda edits STATUS_MSG_PARAM, so point it at the same message.
+  put_param "$STATUS_MSG_PARAM" "$id"
+  log "Created durable pinned status message $id in channel $channel"
 }
 
 # Post the session's status message, or EDIT the existing one in place. The boot
 # progress message and the "Online" embed are deliberately the SAME message, so a
 # session reads as one post updating (Downloading -> Loading -> Online -> Offline)
 # instead of leaving a stale "Downloading…" sitting above the join details.
-status_upsert() { # same args as post_status
+status_upsert() { # same args as post_status (incl. optional $6 content)
+  local pinned id
+  # A durable pinned message, when this guild has one, is ALWAYS the target: it is
+  # edited in place across sessions so the channel keeps one permanent status post.
+  if pinned=$(pinned_status) && [ -n "$pinned" ]; then
+    id=${pinned%% *}
+    # Keep the session pointer aligned so the offline Lambda edits this message too.
+    [ "$(aws ssm get-parameter --name "$STATUS_MSG_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null)" != "$id" ] \
+      && put_param "$STATUS_MSG_PARAM" "$id"
+    edit_status "$@" && return 0
+    # The pinned message is gone (deleted by hand) — forget it and recreate below.
+    log "pinned status message missing; recreating"
+    put_param "${PINNED_STATUS_PREFIX}/$(active_guild)" "none"
+  fi
+  create_pinned_status "$@" && return 0
   edit_status "$@" || post_status "$@"
 }
 
@@ -310,6 +392,11 @@ detect_boot_phase() {
 # Unity Log] <ts>:" mirror (each game line is logged twice, raw + console) so the
 # two copies hash identically and we post once. No-op for games without it.
 declare -A SEEN_EVENTS
+# Events held one cycle for confirmation (GameEvent.confirmDrop). Valheim logs
+# "Player connection lost" on any transient drop, so announcing on the raw line
+# spams a departure notice every time someone blips out and walks straight back
+# in — the count is the ground truth, so we wait a cycle and check it.
+declare -A PENDING_EVENTS
 event_key() { echo "$1" | sed -E 's/Console: \[Info : Unity Log\] [0-9/:. ]*//'; }
 
 # Scan the recent log for each profile event and post NEW matches (deduped by
@@ -318,7 +405,22 @@ event_key() { echo "$1" | sed -E 's/Console: \[Info : Unity Log\] [0-9/:. ]*//';
 # triggered: a short --since window (the count is the level-triggered one).
 scan_events() { # $1 = mode ('seed' to suppress posts)
   [ "${EVENT_COUNT:-0}" -eq 0 ] && return 0
-  local mode="$1" i id pattern title body nameSed color category dedupByName line key name t b logs
+  local mode="$1" i id pattern title body nameSed color category dedupByName confirmDrop line key name t b logs
+  local pk pval pcount pcat pcolor ptitle pbody
+  # Resolve anything held from last cycle FIRST: post it only if the player count
+  # has not recovered. A reconnect cancels the notice entirely. Imperfect when
+  # several players churn at once (the count is a whole-server number, not a
+  # per-player one) — acceptable for flavor posts, and it errs toward silence.
+  for pk in "${!PENDING_EVENTS[@]}"; do
+    pval=${PENDING_EVENTS[$pk]}
+    unset 'PENDING_EVENTS[$pk]'
+    IFS=$'\x1f' read -r pcount pcat pcolor ptitle pbody <<< "$pval"
+    if [ "${PLAYERS:-0}" -le "${pcount:-0}" ]; then
+      notify_enabled "$pcat" && post_discord "$ptitle" "$pbody" "$pcolor"
+    else
+      log "Held event '${pk%%|*}' dropped — count recovered ${pcount} -> ${PLAYERS} (reconnect)"
+    fi
+  done
   # Read the window ONCE per cycle, then grep it per event (not one docker-logs
   # call per event — that was 16x for Valheim every cycle).
   logs=$(docker logs --since "${EVENT_WINDOW:-300s}" "$CONTAINER_NAME" 2>&1)
@@ -334,6 +436,7 @@ scan_events() { # $1 = mode ('seed' to suppress posts)
     # defaults to the event id. Toggled via `/<cmd> notify set <category> off`.
     category=$(echo "$EVENTS_JSON" | jq -r ".[$i] | .category // .id")
     dedupByName=$(echo "$EVENTS_JSON" | jq -r ".[$i].dedupByName // false")
+    confirmDrop=$(echo "$EVENTS_JSON" | jq -r ".[$i].confirmDrop // false")
     while IFS= read -r line; do
       [ -z "$line" ] && continue
       name=""
@@ -346,6 +449,12 @@ scan_events() { # $1 = mode ('seed' to suppress posts)
       SEEN_EVENTS[$key]=1
       [ "$mode" = "seed" ] && continue
       t=${title//\{name\}/$name}; b=${body//\{name\}/$name}
+      # Hold it for one cycle and let the next pass decide (see the flush above).
+      # \x1f-delimited so titles/bodies containing punctuation survive the round trip.
+      if [ "$confirmDrop" = "true" ]; then
+        PENDING_EVENTS[$key]=$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s' "${PLAYERS:-0}" "$category" "$color" "$t" "$b")
+        continue
+      fi
       notify_enabled "$category" && post_discord "$t" "$b" "$color"
     done < <(echo "$logs" | grep -aE "$pattern")
   done
@@ -561,14 +670,20 @@ $DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
       BOOT_PRIVATE=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
       if [ "$BOOT_PRIVATE" != "true" ] && notify_enabled boot && notify_enabled online; then
         if [ "$(echo "$PHASE_JSON" | jq -r '.failure')" = "true" ]; then
-          # Terminal: the server will not become joinable. Say so once, in place,
-          # with the operator action — no buttons, since Stop/Extend are meaningless
-          # here. Deliberately does NOT stop the instance: the box may still be
-          # serving an older build, and tearing it down is the operator's call.
-          # The boot-timeout net below remains the cost backstop either way.
+          # Terminal: the server will not become joinable on its own. Say so once,
+          # in place, with the two actions that make sense here — Restart (re-runs
+          # the update) and Stop. Extend is deliberately absent: there is no idle
+          # clock to extend. Does NOT stop the instance by itself; the box may
+          # still be serving an older build and teardown is the operator's call,
+          # with the boot-timeout net below as the cost backstop either way.
+          # Ping whoever ran `start` — they are the one waiting on it, and a
+          # failure nobody sees is the exact problem this feature exists to fix.
+          STARTER=$(aws ssm get-parameter --name "$SESSION_STARTER_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "none")
+          PING=""
+          case "$STARTER" in ''|none|None) ;; *) PING="<@${STARTER}>" ;; esac
           status_upsert "$(world_title)" "${PHASE_LINE}
 
-The server is running, but on an out-of-date build — clients will be turned away with a version error. It needs a manual reinstall of the game files; \`${SLASH_CMD} stop\` when you're done looking." 15158332 "[]" "[]"
+The server came up, but its game files are out of date — clients will be turned away with a version error. **Restart** re-runs the update; if it fails again the files need a manual reinstall. Use \`${SLASH_CMD} stop\` if you'd rather shut it down." 15158332 "[]" "[{\"type\":1,\"components\":[${BTN_RESTART},${BTN_STOP}]}]" "$PING"
         else
           status_upsert "$(world_title)" "${PHASE_LINE}
 

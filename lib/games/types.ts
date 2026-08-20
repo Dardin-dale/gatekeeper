@@ -218,6 +218,15 @@ export interface GameEvent {
   /** ERE matched per container-log line (grep -E) to detect the event. */
   pattern: string;
   /**
+   * Hold this event one monitor cycle and post it only if the player count has
+   * NOT recovered — for leave events on games that log a disconnect line for any
+   * transient drop. Valheim emits "Player connection lost" on ordinary network
+   * blips, so announcing on the raw line spams a departure notice every time
+   * someone reconnects seconds later. Costs up to one cycle of delay (≈2 min
+   * while live), which is fine for flavor and wrong for anything load-bearing.
+   */
+  confirmDrop?: boolean;
+  /**
    * Embed title for the post. `{name}` is replaced with the value nameSed
    * extracts (or '' when nameSed is unset / matches nothing).
    */

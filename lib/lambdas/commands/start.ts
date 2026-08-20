@@ -183,6 +183,19 @@ export async function handleStartCommand(worldName?: string, guildId?: string, i
       }))
     );
 
+    // Remember who asked for this session, so a boot that fails can ping the one
+    // person actually waiting on it rather than announcing into the void. Always
+    // written (never left stale from a prior session); best-effort, since losing
+    // the attribution must not fail the start itself.
+    await withRetry(() =>
+      ssmClient.send(new PutParameterCommand({
+        Name: SSM_PARAMS.SESSION_STARTER,
+        Value: callerId(interaction) ?? 'none',
+        Type: 'String',
+        Overwrite: true,
+      }))
+    ).catch((err) => console.log('Could not record session starter:', err));
+
     // Start the instance
     console.log(`Starting EC2 instance: ${SERVER_INSTANCE_ID}`);
     await withRetry(() => ec2Client.send(new StartInstancesCommand({

@@ -12,6 +12,9 @@ import {
   getServerLive,
   getSessionPrivate,
   SSM_PARAMS,
+  getBootPhase,
+  getPinnedStatusParam,
+  SESSION_PARAM_RESETS,
 } from '../../lib/lambdas/utils/params';
 
 const resolveValue = (value: string) =>
@@ -86,5 +89,51 @@ describe('boolean + sentinel accessors', () => {
     expect(await getJoinCode()).toBeUndefined();
     resolveValue('ABC123');
     expect(await getJoinCode()).toBe('ABC123');
+  });
+});
+
+describe('boot phase + pinned status', () => {
+  test('getBootPhase maps absent/none to null', async () => {
+    missing();
+    expect(await getBootPhase()).toBeNull();
+    resolveValue('none');
+    expect(await getBootPhase()).toBeNull();
+  });
+
+  test('getBootPhase degrades to null on garbage rather than throwing', async () => {
+    // A wiped or half-written parameter must not take down `/<cmd> status`.
+    resolveValue('{not json');
+    expect(await getBootPhase()).toBeNull();
+    resolveValue('{"progress":42}'); // no id/label
+    expect(await getBootPhase()).toBeNull();
+  });
+
+  test('getBootPhase parses a full phase and defaults the emoji', async () => {
+    resolveValue(JSON.stringify({ id: 'downloading', label: 'Downloading game files', progress: 42.39, failure: false, at: 1786420950 }));
+    expect(await getBootPhase()).toEqual({
+      id: 'downloading', label: 'Downloading game files', emoji: '⏳',
+      progress: 42.39, failure: false, at: 1786420950,
+    });
+  });
+
+  test('getBootPhase carries the failure flag through', async () => {
+    resolveValue(JSON.stringify({ id: 'update-failed', label: 'Game update FAILED', emoji: '⚠️', failure: true }));
+    const p = await getBootPhase();
+    expect(p?.failure).toBe(true);
+    expect(p?.progress).toBeUndefined();
+  });
+
+  test('pinned status is namespaced per guild', () => {
+    expect(getPinnedStatusParam('1085035922208342148'))
+      .toBe(`${SSM_PARAMS.PINNED_STATUS_PREFIX}/1085035922208342148`);
+  });
+
+  test('the pinned message is CONFIG, not session state', () => {
+    // Resetting it on stop would unpin the channel's one permanent status post.
+    const reset = SESSION_PARAM_RESETS.map(([name]) => name);
+    expect(reset).not.toContain(SSM_PARAMS.PINNED_STATUS_PREFIX);
+    // ...while the per-session things it sits next to ARE cleared.
+    expect(reset).toContain(SSM_PARAMS.BOOT_PHASE);
+    expect(reset).toContain(SSM_PARAMS.SESSION_STARTER);
   });
 });

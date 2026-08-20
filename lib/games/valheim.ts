@@ -134,7 +134,12 @@ export const valheim: GameProfile = {
       id: 'leave',
       category: 'leave',
       label: 'Leaves',
+      // Valheim logs this on ANY dropped connection, not just a deliberate exit —
+      // and disconnects are a known Valheim pain point (worse in later biomes),
+      // so the raw line announced a departure every time someone blipped out and
+      // walked straight back in. confirmDrop waits a cycle and checks the count.
       pattern: 'Player connection lost server .* now [0-9]+ player',
+      confirmDrop: true,
       title: '🚪 A viking departs the hall',
     },
   ],
