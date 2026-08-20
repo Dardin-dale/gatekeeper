@@ -95,7 +95,7 @@ export const abioticFactor: GameProfile = {
       id: 'steamcmd',
       // SteamCMD's own bootstrap, not the game: a bracketed KB counter, easily
       // confused with the game's `Update state` progress below.
-      pattern: 'Downloading update \\([0-9]+ of [0-9]+ KB\\)',
+      pattern: 'Downloading update \\([0-9,]+ of [0-9,]+ KB\\)',
       label: 'Updating SteamCMD',
       emoji: '📦',
     },

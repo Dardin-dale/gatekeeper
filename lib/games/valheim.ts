@@ -76,6 +76,75 @@ export const valheim: GameProfile = {
   ],
   queryPort: 2457,
 
+  // Pre-live stages, patterns verbatim from a real boot (2026-08-20). The
+  // container multiplexes supervisord services, so one log carries the updater
+  // (SteamCMD + BepInEx) and the server itself — and they overlap: the server can
+  // be connecting to PlayFab while the updater is still verifying. Phases are
+  // ordered so the closest-to-joinable stage wins that tie.
+  // ⚠️ The failure entry is not hypothetical: SteamCMD self-updated, restarted
+  // mid-command, lost its install dir, and the updater died with "Missing
+  // configuration" — the server never launched and the boot sat silent for 13
+  // minutes with nothing in Discord to show for it.
+  bootPhases: [
+    {
+      id: 'backup',
+      pattern: 'valheim-backup INFO - Creating backup|adding: config/worlds_local',
+      label: 'Backing up worlds',
+      emoji: '\u{1F4BE}',
+    },
+    {
+      id: 'steamcmd',
+      // SteamCMD's own bootstrap. Its counter is thousands-separated here
+      // ("36,155 of 40,321 KB"), unlike the plain digits Abiotic Factor logs.
+      pattern: 'Downloading update \\([0-9,]+ of [0-9,]+ KB\\)',
+      label: 'Updating SteamCMD',
+      emoji: '\u{1F4E6}',
+    },
+    {
+      id: 'downloading',
+      pattern: 'Update state \\(0x[0-9a-f]+\\) downloading',
+      progressPattern: 'progress: ([0-9]+\\.[0-9]+)',
+      label: 'Downloading server files',
+      emoji: '\u{2B07}',
+    },
+    {
+      id: 'verifying',
+      pattern: 'Update state \\(0x[0-9a-f]+\\) verifying',
+      progressPattern: 'progress: ([0-9]+\\.[0-9]+)',
+      label: 'Verifying server files',
+      emoji: '\u{1F50D}',
+    },
+    {
+      id: 'mods',
+      pattern: 'BepInEx is enabled - running updater',
+      label: 'Installing mods (BepInEx)',
+      emoji: '\u{1F9E9}',
+    },
+    {
+      id: 'loading',
+      pattern: 'Opened PlayFab server|Game server connected',
+      label: 'Loading the world',
+      emoji: '\u{1F30D}',
+    },
+    {
+      id: 'registering',
+      // Crossplay registers with PlayFab; the join code lands moments later, and
+      // liveness comes from the "is active with N player(s)" heartbeat.
+      pattern: 'Register PlayFab server|registered with join code',
+      label: 'Registering session',
+      emoji: '\u{1F4E1}',
+    },
+    {
+      id: 'update-failed',
+      // Both verbatim from the 2026-08-20 wedge. "Missing configuration" is
+      // SteamCMD losing force_install_dir across its own self-update restart.
+      pattern: 'ERROR! Failed to install app|Failed to download Valheim server from Steam',
+      label: 'Server update FAILED \u2014 the server never launched',
+      emoji: '\u{26A0}',
+      failure: true,
+    },
+  ],
+
   instanceType: 't3.medium',
   dataVolumeSizeGb: 12,
   autoShutdownMinutes: 15, // idle-stop after 15 min with no players (cost control)
