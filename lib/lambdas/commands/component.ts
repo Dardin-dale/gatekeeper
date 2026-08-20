@@ -96,11 +96,8 @@ export async function handleComponentInteraction(body: any): Promise<APIGatewayP
     case "gk_extend":
       return await handleExtendButton();
 
-    // Restart, offered only on a failed-boot status message: re-runs the game
-    // server unit, which re-attempts the update that failed. Cheap and safe
-    // (the instance and the data volume are untouched), so it needs no confirm
-    // step — unlike Stop, a mis-click here costs a couple of minutes, not a
-    // session. If it fails a second time the files need a manual reinstall.
+    // No confirm step, unlike Stop: the instance and data volume are untouched,
+    // so a mis-click costs a couple of minutes rather than a session.
     case "gk_restart":
       return await handleRestartButton();
 
@@ -114,10 +111,9 @@ export async function handleComponentInteraction(body: any): Promise<APIGatewayP
 }
 
 /**
- * Restart the game server container in place: `systemctl restart game-server` on
- * the host, which re-runs the image entrypoint (and therefore the update step
- * that failed). Fire-and-forget — the host monitor takes over reporting from
- * there, republishing boot phases into this same status message.
+ * Restart the game server unit on the host, re-running the image entrypoint and
+ * therefore the update step that failed. Fire-and-forget: the host monitor takes
+ * over, republishing boot phases into this same status message.
  */
 async function handleRestartButton(): Promise<APIGatewayProxyResult> {
   try {

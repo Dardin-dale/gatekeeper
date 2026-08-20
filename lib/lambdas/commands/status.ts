@@ -68,7 +68,6 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
     // Instance running !== game joinable: the host monitor flips server-live on
     // its liveness transitions, so a booting game reads 'false' here.
     let gameLive = true;
-    // What the boot is DOING while gameLive is false (host monitor publishes it).
     let bootPhase: BootPhaseStatus | null = null;
 
     if (status === 'running') {
@@ -127,9 +126,8 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
       description = 'Server is shutting down...';
       embedColor = 0xff6600;
     } else if (status === 'running' && bootPhase?.failure) {
-      // The boot cannot succeed (e.g. the game update failed and the server is
-      // serving a stale build). Report it as an error, not as "please wait" —
-      // waiting is exactly the wrong advice when nothing will change.
+      // An error, not a "please wait": waiting is the wrong advice when nothing
+      // will change on its own.
       statusEmoji = bootPhase.emoji;
       statusText = 'Needs attention';
       description = `**${bootPhase.label}**\n\n` +
@@ -137,8 +135,8 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
         `operator. Players trying to join will be rejected.`;
       embedColor = 0xff0000;
     } else if (status === 'running' && !gameLive) {
-      // Say which stage it's in when the profile defines bootPhases, so a long
-      // SteamCMD download reads as progress rather than a hung "Starting…".
+      // Name the stage when the profile defines bootPhases, so a long download
+      // reads as progress rather than a hung "Starting…".
       statusEmoji = bootPhase?.emoji ?? '⏳';
       statusText = 'Starting';
       const stage = bootPhase

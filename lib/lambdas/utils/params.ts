@@ -47,10 +47,9 @@ export const SSM_PARAMS = {
   MESSAGE_TTL_HOURS: `${SSM_PREFIX}/message-ttl-hours`, // hours after offline before the status message auto-deletes ('off' = keep)
   PREWARM_MINUTES: `${SSM_PREFIX}/prewarm-minutes`, // scheduled openings: start this many minutes before the announced time
   EXTEND_MINUTES: `${SSM_PREFIX}/extend-minutes`, // Extend button: minutes of idle grace added per press ('off' = feature disabled)
-  // Per-guild durable status message: /gatekeeper/<game>/pinned-status/<guild-id>
-  // = JSON {messageId, channelId}. Created and PINNED once, then edited in place
-  // forever (Online -> Offline -> Online), so a channel keeps one permanent place
-  // to look. Deliberately CONFIG, not SESSION: outliving the session is the point.
+  // Per-guild durable status message: /pinned-status/<guild-id> = {messageId,
+  // channelId}. Created and pinned once, then edited in place across sessions.
+  // Deliberately CONFIG, not SESSION: outliving the session is the point.
   PINNED_STATUS_PREFIX: `${SSM_PREFIX}/pinned-status`,
 
   // --- SESSION (transient; cleared on stop) ---

@@ -3,15 +3,12 @@ import { abioticFactor } from '../../lib/games/abiotic-factor';
 import { BootPhase } from '../../lib/games/types';
 
 /**
- * Boot-phase patterns are scraped from container logs by scripts/game/monitor.sh,
- * so a typo'd ERE fails silently in production: the phase simply never matches and
- * players are back to a blank "Starting…". These fixtures are VERBATIM lines from a
- * real Abiotic Factor boot (2026-08-10) — the same session where a failed game
- * update left the server on a stale build and nothing surfaced it for 45 minutes.
+ * A typo'd ERE fails SILENTLY in production — the phase never matches and players
+ * are back to a blank "Starting…" — so these fixtures are verbatim lines from a
+ * real Abiotic Factor boot (2026-08-10).
  *
- * Scope note: this pins the PATTERNS. The resolution rule that consumes them
- * (failure wins outright, else last match) lives in bash and is exercised by the
- * local-Docker tier; `resolve()` below mirrors it only to assert the ordering the
+ * Scope: this pins the PATTERNS. The resolution rule lives in bash (exercised by
+ * the local-Docker tier); `resolve()` mirrors it to assert the ordering the
  * profile relies on, and must be kept in step with detect_boot_phase().
  */
 const AF_LOG = {

@@ -68,11 +68,8 @@ EVENT_COUNT=$(echo "$EVENTS_JSON" | jq 'length')
 # Log window scanned for events each cycle. Larger than the slow cadence (120s)
 # so nothing is missed between cycles; dedup makes the overlap a no-op.
 EVENT_WINDOW="300s"
-# Pre-live boot stages (see GameProfile.bootPhases): a JSON array of
-# {id,pattern,label,emoji?,progressPattern?,failure?}. Matched against the FULL
-# container log while awaiting first liveness, so "Starting…" can say what the
-# server is actually doing — and so a FAILED game update is announced instead of
-# silently running a stale build until the boot-timeout window expires.
+# Pre-live boot stages (see GameProfile.bootPhases): {id,pattern,label,emoji?,
+# progressPattern?,failure?}, matched against the full container log.
 BOOT_PHASES_JSON=$(jq -c '.bootPhases // []' "$PROFILE")
 BOOT_PHASE_COUNT=$(echo "$BOOT_PHASES_JSON" | jq 'length')
 # Join port + hint for the readiness embed (mirrors /gate join + status). Port
@@ -274,8 +271,7 @@ active_guild() {
     --output text 2>/dev/null | jq -r '.discordServerId // empty' 2>/dev/null
 }
 
-# The guild's durable pinned status message as "<messageId> <channelId>", or
-# nothing when this guild has no pinned message yet.
+# The guild's durable pinned message as "<messageId> <channelId>", if it has one.
 pinned_status() {
   local guild v
   guild=$(active_guild) || return 1
@@ -308,10 +304,9 @@ pin_message() { # $1 = channel id, $2 = message id
   esac
 }
 
-# Create the guild's durable status message: post it, PIN it, and remember
-# {messageId,channelId} so every later session edits this same message instead of
-# posting a new one. The webhook's ?wait=true response carries the channel_id we
-# need for the pin — which is why creation happens here and not in a Lambda.
+# Create the guild's durable status message, once. Lives on the host rather than
+# in a Lambda because the webhook's ?wait=true response is the only place the
+# channel_id needed for the pin comes from.
 create_pinned_status() { # $1=title $2=description $3=color $4=fields $5=components
   local url payload resp id channel guild
   guild=$(active_guild); [ -z "$guild" ] && return 1
@@ -329,14 +324,12 @@ create_pinned_status() { # $1=title $2=description $3=color $4=fields $5=compone
   log "Created durable pinned status message $id in channel $channel"
 }
 
-# Post the session's status message, or EDIT the existing one in place. The boot
-# progress message and the "Online" embed are deliberately the SAME message, so a
-# session reads as one post updating (Downloading -> Loading -> Online -> Offline)
-# instead of leaving a stale "Downloading…" sitting above the join details.
+# Post the status message, or edit the existing one. Boot progress and the Online
+# embed are deliberately the SAME message, so a session reads as one post updating
+# rather than stranding a stale "Downloading…" above the join details.
 status_upsert() { # same args as post_status (incl. optional $6 content)
   local pinned id
-  # A durable pinned message, when this guild has one, is ALWAYS the target: it is
-  # edited in place across sessions so the channel keeps one permanent status post.
+  # The pinned message, when one exists, is always the target.
   if pinned=$(pinned_status) && [ -n "$pinned" ]; then
     id=${pinned%% *}
     # Keep the session pointer aligned so the offline Lambda edits this message too.
@@ -351,16 +344,9 @@ status_upsert() { # same args as post_status (incl. optional $6 content)
   edit_status "$@" || post_status "$@"
 }
 
-# Resolve the current pre-live boot stage from the container log. Echoes a compact
-# JSON object {id,label,emoji,failure,at,progress?} and returns 0, or returns 1
-# when nothing matches (no bootPhases, empty log, pre-first-output).
-#
-# Resolution mirrors GameProfile.bootPhases:
-#   1. a `failure: true` entry wins OUTRIGHT — a server whose update failed keeps
-#      logging the LATER phases as it boots the stale build, so "furthest phase
-#      wins" would cheerfully report "Loading the facility" while the only thing
-#      worth saying is that no client can connect;
-#   2. otherwise the LAST match wins, so profiles list phases in boot order.
+# Echo the current pre-live stage as compact JSON, or return 1 if none matches.
+# Resolution per GameProfile.bootPhases: a `failure` entry wins outright (a stale
+# build keeps logging LATER phases after its update fails), else the last match.
 detect_boot_phase() {
   [ "${BOOT_PHASE_COUNT:-0}" -eq 0 ] && return 1
   local logs entry pat winner="" i=0 prog_pat prog=""
@@ -373,12 +359,10 @@ detect_boot_phase() {
     [ -z "$pat" ] && continue
     echo "$logs" | grep -qE "$pat" || continue
     winner="$entry"
-    # Terminal failure: stop looking, it outranks anything later in the list.
     [ "$(echo "$entry" | jq -r '.failure // false')" = "true" ] && break
   done
   [ -z "$winner" ] && return 1
-  # Optional progress: the last numeric token of the phase pattern's last match
-  # (e.g. SteamCMD's "progress: 42.39" -> 42.39). Absent for phases without one.
+  # Progress = last numeric token of the pattern's last match ("progress: 42.39").
   prog_pat=$(echo "$winner" | jq -r '.progressPattern // empty')
   if [ -n "$prog_pat" ]; then
     prog=$(echo "$logs" | grep -oE "$prog_pat" | tail -1 | grep -oE '[0-9]+(\.[0-9]+)?' | tail -1)
@@ -449,7 +433,6 @@ scan_events() { # $1 = mode ('seed' to suppress posts)
       SEEN_EVENTS[$key]=1
       [ "$mode" = "seed" ] && continue
       t=${title//\{name\}/$name}; b=${body//\{name\}/$name}
-      # Hold it for one cycle and let the next pass decide (see the flush above).
       # \x1f-delimited so titles/bodies containing punctuation survive the round trip.
       if [ "$confirmDrop" = "true" ]; then
         PENDING_EVENTS[$key]=$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s' "${PLAYERS:-0}" "$category" "$color" "$t" "$b")
@@ -650,13 +633,11 @@ $DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
   # --- Flavor events -> Discord (deaths, raids, joins; deduped, gated by toggle) ---
   scan_events
 
-  # --- Boot progress: while the game has not answered a liveness check yet, say
-  #     WHAT it is doing rather than leaving players on a silent "starting...".
-  #     Publishes to SSM (drives `/<cmd> status`) and keeps the ONE session status
-  #     message updated in place. Private sessions post nothing to the channel —
-  #     the SSM value still feeds their ephemeral status reply. Gated on `online`
-  #     as well as `boot`, so a channel that opted out of readiness pings never
-  #     gets a boot message stranded mid-phase with no Online edit to follow. ---
+  # --- Boot progress -> SSM (drives `/<cmd> status`) + the status message.
+  #     Private sessions post nothing to the channel; the SSM value still feeds
+  #     their ephemeral status. Gated on `online` as well as `boot` so a channel
+  #     that opted out of readiness pings can't strand a boot message mid-phase
+  #     with no Online edit to follow. ---
   if [ ! -f "$SEEN_LIVE_FLAG" ] && PHASE_JSON=$(detect_boot_phase); then
     PHASE_ID=$(echo "$PHASE_JSON" | jq -r '.id')
     PHASE_PROG=$(echo "$PHASE_JSON" | jq -r '.progress // empty')
@@ -670,14 +651,10 @@ $DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
       BOOT_PRIVATE=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
       if [ "$BOOT_PRIVATE" != "true" ] && notify_enabled boot && notify_enabled online; then
         if [ "$(echo "$PHASE_JSON" | jq -r '.failure')" = "true" ]; then
-          # Terminal: the server will not become joinable on its own. Say so once,
-          # in place, with the two actions that make sense here — Restart (re-runs
-          # the update) and Stop. Extend is deliberately absent: there is no idle
-          # clock to extend. Does NOT stop the instance by itself; the box may
-          # still be serving an older build and teardown is the operator's call,
-          # with the boot-timeout net below as the cost backstop either way.
-          # Ping whoever ran `start` — they are the one waiting on it, and a
-          # failure nobody sees is the exact problem this feature exists to fix.
+          # Terminal. Extend is absent (no idle clock to extend), and this does
+          # NOT stop the instance: the box may still serve an older build, so
+          # teardown stays the operator's call with boot-timeout as the backstop.
+          # Ping whoever ran `start` — a failure nobody sees is the whole problem.
           STARTER=$(aws ssm get-parameter --name "$SESSION_STARTER_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "none")
           PING=""
           case "$STARTER" in ''|none|None) ;; *) PING="<@${STARTER}>" ;; esac

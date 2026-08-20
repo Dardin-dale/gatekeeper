@@ -183,10 +183,9 @@ export async function handleStartCommand(worldName?: string, guildId?: string, i
       }))
     );
 
-    // Remember who asked for this session, so a boot that fails can ping the one
-    // person actually waiting on it rather than announcing into the void. Always
-    // written (never left stale from a prior session); best-effort, since losing
-    // the attribution must not fail the start itself.
+    // So a failed boot can ping the person actually waiting on it. Always written
+    // (never left stale from a prior session), and best-effort: losing the
+    // attribution must not fail the start.
     await withRetry(() =>
       ssmClient.send(new PutParameterCommand({
         Name: SSM_PARAMS.SESSION_STARTER,

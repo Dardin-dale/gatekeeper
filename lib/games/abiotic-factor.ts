@@ -84,18 +84,17 @@ export const abioticFactor: GameProfile = {
     },
   ],
 
-  // What the container is doing before it answers A2S. Every pattern below is
-  // verbatim from a real AF boot — the container's stdout is SteamCMD's output
-  // followed by Wine + the UE5 server's, so one log carries both halves.
-  // ⚠️ The update failure is the reason this exists: the image's entrypoint runs
+  // Patterns are verbatim from a real AF boot: the container's stdout is SteamCMD's
+  // output followed by Wine + the UE5 server's, so one log carries both halves.
+  // ⚠️ The failure phase is why this exists — the image's entrypoint runs
   // `steamcmd …; wine …` with NO exit-code check, so a failed update launches the
-  // STALE build and the server looks perfectly healthy while every client bounces
-  // off a version mismatch. Detecting it here is the only place it becomes visible.
+  // STALE build and the server looks healthy while every client bounces off a
+  // version mismatch. This is the only place that becomes visible.
   bootPhases: [
     {
       id: 'steamcmd',
-      // SteamCMD self-updating (its own bootstrap, not the game) — bracketed KB
-      // counter, distinct from the game's `Update state` progress below.
+      // SteamCMD's own bootstrap, not the game: a bracketed KB counter, easily
+      // confused with the game's `Update state` progress below.
       pattern: 'Downloading update \\([0-9]+ of [0-9]+ KB\\)',
       label: 'Updating SteamCMD',
       emoji: '📦',
@@ -134,16 +133,16 @@ export const abioticFactor: GameProfile = {
     },
     {
       id: 'registering',
-      // Session code is printed once the world is up; the remaining wait is the
-      // Steam registration that A2S liveness actually depends on.
+      // Printed once the world is up; the remaining wait is the Steam
+      // registration that A2S liveness depends on.
       pattern: 'Session short code:',
       label: 'Registering with Steam',
       emoji: '📡',
     },
     {
       id: 'update-failed',
-      // Verbatim SteamCMD failures. `state is 0x6` = Fully Installed | Update
-      // Required, i.e. the update job ran and left the old build in place.
+      // `state is 0x6` = Fully Installed | Update Required: the update job ran
+      // and left the old build in place.
       pattern: "Error! App '[0-9]+' state is 0x[0-9a-f]+ after update job"
         + '|ERROR! Failed to install app'
         + '|Failed to get manifest request code',

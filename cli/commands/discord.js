@@ -36,21 +36,10 @@ async function putToken() {
   console.log('  game-presence.service on the instance — bot shows online while the server runs.');
 }
 
-// ---------------------------------------------------------------------------
-// Invite / re-invite URL.
-//
-// Discord has no mechanism for a bot to REQUEST additional permissions after the
-// fact: the only way to widen them is to re-run the OAuth2 authorization with a
-// larger `permissions` integer, which updates the bot's managed role in the
-// guild. Re-authorizing is non-destructive — the bot is not kicked, the token is
-// unchanged, and registered commands are untouched.
-//
-// The integer is DERIVED from named flags rather than hard-coded, so the value is
-// auditable and a new requirement is one line rather than a magic number. Each
-// game has its own application id, so this reads the id from the same place the
-// stack and register-commands do; nothing about one deployment is baked into the
-// repo.
-// ---------------------------------------------------------------------------
+// Invite / re-invite URL. Discord has no way for a bot to request permissions
+// after install — re-running authorization with a larger integer is the only
+// route (docs/discord-setup.md). The integer is derived from named flags so the
+// grant is auditable, and the app id is read per-game rather than baked in.
 const PERMISSION_FLAGS = {
   VIEW_CHANNEL: 1n << 10n,          // see the channel at all
   SEND_MESSAGES: 1n << 11n,         // fallback posts; persona posts go via webhook

@@ -104,11 +104,10 @@ export interface GameProfile {
   events?: GameEvent[];
 
   /**
-   * Optional: what the server is DOING before it answers a liveness check, read
-   * out of container logs. Without this the whole pre-live window — SteamCMD
-   * downloads, world load, a failed update — is one opaque "Starting…", which is
-   * what players see when a boot goes wrong (a stale-build server once sat
-   * "starting" for 45 min while actually running and unjoinable).
+   * Optional: what the server is doing before it answers a liveness check, read
+   * out of container logs. Without it the whole pre-live window is one opaque
+   * "Starting…" — a stale-build server once sat that way for 45 min while
+   * actually running and unjoinable.
    *
    * Resolution each cycle, against the whole container log:
    *   1. any entry with `failure: true` wins outright — a failed update must not
@@ -191,16 +190,15 @@ export interface BootPhase {
   /** Leading emoji for the status line. Defaults to ⏳ when unset. */
   emoji?: string;
   /**
-   * Optional ERE with ONE capture group yielding a 0-100 progress number, taken
-   * from the last matching line (e.g. SteamCMD's `progress: 42.39`). Rendered
-   * next to the label so a long download reads as moving, not hung.
+   * Optional ERE whose last match carries a 0-100 progress number (e.g. SteamCMD's
+   * `progress: 42.39`); the host takes the last numeric token of that match.
+   * Rendered next to the label so a long download reads as moving, not hung.
    */
   progressPattern?: string;
   /**
    * Marks a TERMINAL failure — the boot cannot succeed from here (e.g. SteamCMD
-   * exhausted its update job with the app still flagged Update Required). The
-   * monitor announces it immediately instead of burning the whole boot-timeout
-   * window, since the useful signal is "this will never come up", not "wait".
+   * left the app flagged Update Required). Announced immediately rather than
+   * after the boot-timeout window: the signal is "this will never come up".
    */
   failure?: boolean;
 }
