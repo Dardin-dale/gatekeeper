@@ -52,6 +52,7 @@ export const SSM_PARAMS = {
   PLAYER_COUNT: `${SSM_PREFIX}/player-count`, // current online count, written by the host monitor each cycle
   JOIN_CODE: `${SSM_PREFIX}/join-code`, // per-session lobby code scraped by the host monitor ('none' = absent)
   SERVER_LIVE: `${SSM_PREFIX}/server-live`, // 'true' while the game answers the host monitor's liveness checks
+  BOOT_PHASE: `${SSM_PREFIX}/boot-phase`, // JSON {id,label,emoji,progress,failure,at} of the pre-live stage; 'none' once live
   SESSION_PRIVATE: `${SSM_PREFIX}/session-private`, // 'true' for a quiet session: host skips the public online ping, join/status reply privately
   STATUS_MESSAGE_ID: `${SSM_PREFIX}/status-message-id`, // id of this session's readiness message; the offline notification edits it in place ('none' = post fresh)
   EXTEND_UNTIL: `${SSM_PREFIX}/extend-until`, // epoch-ms the host monitor holds off idle-shutdown until ('0'/absent = no grace)
@@ -73,6 +74,7 @@ export const SSM_PARAMS = {
 export const SESSION_PARAM_RESETS: ReadonlyArray<readonly [string, string]> = [
   [SSM_PARAMS.JOIN_CODE, "none"],
   [SSM_PARAMS.SERVER_LIVE, "false"],
+  [SSM_PARAMS.BOOT_PHASE, "none"],
   [SSM_PARAMS.SESSION_PRIVATE, "false"],
   [SSM_PARAMS.STATUS_MESSAGE_ID, "none"],
   [SSM_PARAMS.EXTEND_UNTIL, "0"],
@@ -94,6 +96,7 @@ export const SYSTEM_NOTIFY_CATEGORIES = [
   { key: "idle", label: "💤 Idle-shutdown notice" },
   { key: "backup", label: "💾 Backup complete" },
   { key: "failed", label: "⚠️ Failed to start" },
+  { key: "boot", label: "⏳ Boot progress (updating / loading)" },
 ] as const;
 
 /**
@@ -212,6 +215,44 @@ export async function getNumberParam(
  */
 export async function getServerLive(): Promise<boolean> {
   return (await getRawParam(SSM_PARAMS.SERVER_LIVE)) !== "false";
+}
+
+/** What the host monitor last reported the pre-live boot was doing (see BootPhase). */
+export interface BootPhaseStatus {
+  id: string;
+  label: string;
+  emoji: string;
+  /** 0-100 for phases that expose one (e.g. a SteamCMD download); absent otherwise. */
+  progress?: number;
+  /** True when the boot cannot succeed — surfaced as an error, not a "please wait". */
+  failure: boolean;
+  /** Epoch seconds this phase was first observed, for "… for 4m" rendering. */
+  at?: number;
+}
+
+/**
+ * The current pre-live boot stage, or null when there is none to report (server
+ * already live, phase unset, or a profile without bootPhases). Best-effort by
+ * design: a missing/garbled value degrades to the generic "Starting…" copy
+ * rather than failing the status command.
+ */
+export async function getBootPhase(): Promise<BootPhaseStatus | null> {
+  const raw = await getRawParam(SSM_PARAMS.BOOT_PHASE);
+  if (!raw || raw === "none") return null;
+  try {
+    const p = JSON.parse(raw);
+    if (!p?.id || !p?.label) return null;
+    return {
+      id: String(p.id),
+      label: String(p.label),
+      emoji: String(p.emoji || "⏳"),
+      progress: typeof p.progress === "number" ? p.progress : undefined,
+      failure: p.failure === true,
+      at: typeof p.at === "number" ? p.at : undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**

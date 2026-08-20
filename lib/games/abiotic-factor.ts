@@ -84,6 +84,75 @@ export const abioticFactor: GameProfile = {
     },
   ],
 
+  // What the container is doing before it answers A2S. Every pattern below is
+  // verbatim from a real AF boot — the container's stdout is SteamCMD's output
+  // followed by Wine + the UE5 server's, so one log carries both halves.
+  // ⚠️ The update failure is the reason this exists: the image's entrypoint runs
+  // `steamcmd …; wine …` with NO exit-code check, so a failed update launches the
+  // STALE build and the server looks perfectly healthy while every client bounces
+  // off a version mismatch. Detecting it here is the only place it becomes visible.
+  bootPhases: [
+    {
+      id: 'steamcmd',
+      // SteamCMD self-updating (its own bootstrap, not the game) — bracketed KB
+      // counter, distinct from the game's `Update state` progress below.
+      pattern: 'Downloading update \\([0-9]+ of [0-9]+ KB\\)',
+      label: 'Updating SteamCMD',
+      emoji: '📦',
+    },
+    {
+      id: 'downloading',
+      pattern: 'Update state \\(0x[0-9a-f]+\\) downloading',
+      progressPattern: 'progress: ([0-9]+\\.[0-9]+)',
+      label: 'Downloading game files',
+      emoji: '⬇️',
+    },
+    {
+      id: 'verifying',
+      pattern: 'Update state \\(0x[0-9a-f]+\\) verifying|Verifying installation',
+      progressPattern: 'progress: ([0-9]+\\.[0-9]+)',
+      label: 'Verifying game files',
+      emoji: '🔍',
+    },
+    {
+      id: 'launching',
+      pattern: "Success! App '[0-9]+' fully installed|Mounting pak file",
+      label: 'Launching server',
+      emoji: '🚀',
+    },
+    {
+      id: 'world-check',
+      pattern: 'checking world save for corruption',
+      label: 'Checking world save',
+      emoji: '💾',
+    },
+    {
+      id: 'loading-map',
+      pattern: 'Dedicated Server is now loading the main map',
+      label: 'Loading the facility',
+      emoji: '🏭',
+    },
+    {
+      id: 'registering',
+      // Session code is printed once the world is up; the remaining wait is the
+      // Steam registration that A2S liveness actually depends on.
+      pattern: 'Session short code:',
+      label: 'Registering with Steam',
+      emoji: '📡',
+    },
+    {
+      id: 'update-failed',
+      // Verbatim SteamCMD failures. `state is 0x6` = Fully Installed | Update
+      // Required, i.e. the update job ran and left the old build in place.
+      pattern: "Error! App '[0-9]+' state is 0x[0-9a-f]+ after update job"
+        + '|ERROR! Failed to install app'
+        + '|Failed to get manifest request code',
+      label: 'Game update FAILED — server is on an outdated build, clients will be rejected',
+      emoji: '⚠️',
+      failure: true,
+    },
+  ],
+
   // Wine + a UE5 game wants more headroom than a native server. Override via INSTANCE_TYPE.
   instanceType: 't3.large',
   dataVolumeSizeGb: 20, // SteamCMD pulls several GB for AF

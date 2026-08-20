@@ -68,6 +68,13 @@ EVENT_COUNT=$(echo "$EVENTS_JSON" | jq 'length')
 # Log window scanned for events each cycle. Larger than the slow cadence (120s)
 # so nothing is missed between cycles; dedup makes the overlap a no-op.
 EVENT_WINDOW="300s"
+# Pre-live boot stages (see GameProfile.bootPhases): a JSON array of
+# {id,pattern,label,emoji?,progressPattern?,failure?}. Matched against the FULL
+# container log while awaiting first liveness, so "Starting…" can say what the
+# server is actually doing — and so a FAILED game update is announced instead of
+# silently running a stale build until the boot-timeout window expires.
+BOOT_PHASES_JSON=$(jq -c '.bootPhases // []' "$PROFILE")
+BOOT_PHASE_COUNT=$(echo "$BOOT_PHASES_JSON" | jq 'length')
 # Join port + hint for the readiness embed (mirrors /gate join + status). Port
 # falls back to the first game port; hint is the game's connect instructions.
 JOIN_PORT=$(jq -r '.join.port // .ports[0].from' "$PROFILE")
@@ -81,6 +88,7 @@ BOOT_TIMEOUT_PARAM="/gatekeeper/${GAME_ID}/boot-timeout-minutes"
 ACTIVE_WORLD_PARAM="/gatekeeper/${GAME_ID}/active-world"
 JOIN_CODE_PARAM="/gatekeeper/${GAME_ID}/join-code"
 SERVER_LIVE_PARAM="/gatekeeper/${GAME_ID}/server-live"
+BOOT_PHASE_PARAM="/gatekeeper/${GAME_ID}/boot-phase"       # JSON of the current pre-live stage; 'none' once live
 SESSION_PRIVATE_PARAM="/gatekeeper/${GAME_ID}/session-private" # 'true' = quiet session: skip the public online ping
 STATUS_MSG_PARAM="/gatekeeper/${GAME_ID}/status-message-id"    # readiness message id; the offline lambda edits it in place
 EXTEND_MINUTES_PARAM="/gatekeeper/${GAME_ID}/extend-minutes"   # Extend button: minutes of idle grace per press ('off' = disabled)
@@ -115,10 +123,12 @@ invalidate_session_params
 # wipe the id before the offline lambda can edit this session's message). This
 # session's post_status overwrites it; a suppressed/private online leaves 'none'.
 put_param "$STATUS_MSG_PARAM" "none"
+put_param "$BOOT_PHASE_PARAM" "none"
 MISS_COUNT=0          # consecutive failed liveness checks (for down-debounce)
 LAST_PLAYERS=0        # last good player count (held through a debounced blip)
 PUBLISHED_BTN="show"  # status-message button state ("show"=Extend visible / "hide"); the first-live post uses live_controls(0)=show
 PUBLISHED_JOIN_CODE="" # join code currently in SSM (rewrite only on change)
+PUBLISHED_BOOT_PHASE="" # "<id>:<progress>" currently published (rewrite only on change)
 BOOT_START=$(date +%s) # for the boot-timeout safety net (server-never-comes-up guard)
 log "Monitoring $GAME_ID (A2S 127.0.0.1:$QUERY_PORT, game port $GAME_PORT)"
 
@@ -249,6 +259,51 @@ edit_status() { # $1=title $2=description $3=color $4=optional fields JSON $5=op
   curl -s -m 10 -H "Content-Type: application/json" -X PATCH "${url}/messages/${id}" -d "$payload" > /dev/null 2>&1 \
     || log "WARNING: status message edit failed"
   return 0
+}
+
+# Post the session's status message, or EDIT the existing one in place. The boot
+# progress message and the "Online" embed are deliberately the SAME message, so a
+# session reads as one post updating (Downloading -> Loading -> Online -> Offline)
+# instead of leaving a stale "Downloading…" sitting above the join details.
+status_upsert() { # same args as post_status
+  edit_status "$@" || post_status "$@"
+}
+
+# Resolve the current pre-live boot stage from the container log. Echoes a compact
+# JSON object {id,label,emoji,failure,at,progress?} and returns 0, or returns 1
+# when nothing matches (no bootPhases, empty log, pre-first-output).
+#
+# Resolution mirrors GameProfile.bootPhases:
+#   1. a `failure: true` entry wins OUTRIGHT — a server whose update failed keeps
+#      logging the LATER phases as it boots the stale build, so "furthest phase
+#      wins" would cheerfully report "Loading the facility" while the only thing
+#      worth saying is that no client can connect;
+#   2. otherwise the LAST match wins, so profiles list phases in boot order.
+detect_boot_phase() {
+  [ "${BOOT_PHASE_COUNT:-0}" -eq 0 ] && return 1
+  local logs entry pat winner="" i=0 prog_pat prog=""
+  logs=$(docker logs "$CONTAINER_NAME" 2>&1) || return 1
+  [ -z "$logs" ] && return 1
+  while [ "$i" -lt "$BOOT_PHASE_COUNT" ]; do
+    entry=$(echo "$BOOT_PHASES_JSON" | jq -c ".[$i]")
+    i=$((i + 1))
+    pat=$(echo "$entry" | jq -r '.pattern // empty')
+    [ -z "$pat" ] && continue
+    echo "$logs" | grep -qE "$pat" || continue
+    winner="$entry"
+    # Terminal failure: stop looking, it outranks anything later in the list.
+    [ "$(echo "$entry" | jq -r '.failure // false')" = "true" ] && break
+  done
+  [ -z "$winner" ] && return 1
+  # Optional progress: the last numeric token of the phase pattern's last match
+  # (e.g. SteamCMD's "progress: 42.39" -> 42.39). Absent for phases without one.
+  prog_pat=$(echo "$winner" | jq -r '.progressPattern // empty')
+  if [ -n "$prog_pat" ]; then
+    prog=$(echo "$logs" | grep -oE "$prog_pat" | tail -1 | grep -oE '[0-9]+(\.[0-9]+)?' | tail -1)
+  fi
+  echo "$winner" | jq -c --arg prog "$prog" --argjson at "$(date +%s)" \
+    '{id, label, emoji: (.emoji // "\u23f3"), failure: (.failure // false), at: $at}
+     + (if $prog != "" then {progress: ($prog | tonumber)} else {} end)'
 }
 
 # Dedup key for an event line: collapse the lloesche/Valheim "Console: [Info :
@@ -395,6 +450,9 @@ while true; do
     fi
     if [ ! -f "$SEEN_LIVE_FLAG" ]; then
       touch "$SEEN_LIVE_FLAG"
+      # The boot is over: drop the phase so `/<cmd> status` stops reporting one.
+      put_param "$BOOT_PHASE_PARAM" "none"
+      PUBLISHED_BOOT_PHASE=""
       # Anchor the idle clock to first-live, not monitor start. Otherwise a slow
       # boot (e.g. a fresh Steam download) burns into the idle grace window — with
       # a 12-min boot and a 15-min auto-shutdown, a player-less session would
@@ -447,12 +505,12 @@ while true; do
         # `/<cmd> join`). post_status captures the id so the lifecycle still edits
         # this one message (cue -> Offline). "Private" here is quiet, not locked —
         # anyone in the channel could /join; true lockout needs a separate world.
-        notify_enabled online && post_status "$WTITLE" "🔒 **Private — Live**
+        notify_enabled online && status_upsert "$WTITLE" "🔒 **Private — Live**
 Run \`${SLASH_CMD} join\` when the bot's status shows it's playing the game. The join address is never posted to the channel. Make the game public with \`${SLASH_CMD} open\`." 10181046 "[]" "$BTNS"
       else
         # post_status captures the message id so the offline lambda edits THIS
         # message into the offline state (one message, Online -> Offline).
-        notify_enabled online && post_status "$WTITLE" "🟢 **Online**
+        notify_enabled online && status_upsert "$WTITLE" "🟢 **Online**
 $DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
       fi
     fi
@@ -482,6 +540,43 @@ $DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
 
   # --- Flavor events -> Discord (deaths, raids, joins; deduped, gated by toggle) ---
   scan_events
+
+  # --- Boot progress: while the game has not answered a liveness check yet, say
+  #     WHAT it is doing rather than leaving players on a silent "starting...".
+  #     Publishes to SSM (drives `/<cmd> status`) and keeps the ONE session status
+  #     message updated in place. Private sessions post nothing to the channel —
+  #     the SSM value still feeds their ephemeral status reply. Gated on `online`
+  #     as well as `boot`, so a channel that opted out of readiness pings never
+  #     gets a boot message stranded mid-phase with no Online edit to follow. ---
+  if [ ! -f "$SEEN_LIVE_FLAG" ] && PHASE_JSON=$(detect_boot_phase); then
+    PHASE_ID=$(echo "$PHASE_JSON" | jq -r '.id')
+    PHASE_PROG=$(echo "$PHASE_JSON" | jq -r '.progress // empty')
+    # Re-publish only on a real change; a download re-renders as its % moves.
+    if [ "${PHASE_ID}:${PHASE_PROG}" != "$PUBLISHED_BOOT_PHASE" ]; then
+      PUBLISHED_BOOT_PHASE="${PHASE_ID}:${PHASE_PROG}"
+      put_param "$BOOT_PHASE_PARAM" "$PHASE_JSON"
+      log "Boot phase: ${PHASE_ID}${PHASE_PROG:+ (${PHASE_PROG}%)}"
+      PHASE_LINE="$(echo "$PHASE_JSON" | jq -r '.emoji') **$(echo "$PHASE_JSON" | jq -r '.label')**"
+      [ -n "$PHASE_PROG" ] && PHASE_LINE="${PHASE_LINE} — ${PHASE_PROG}%"
+      BOOT_PRIVATE=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
+      if [ "$BOOT_PRIVATE" != "true" ] && notify_enabled boot && notify_enabled online; then
+        if [ "$(echo "$PHASE_JSON" | jq -r '.failure')" = "true" ]; then
+          # Terminal: the server will not become joinable. Say so once, in place,
+          # with the operator action — no buttons, since Stop/Extend are meaningless
+          # here. Deliberately does NOT stop the instance: the box may still be
+          # serving an older build, and tearing it down is the operator's call.
+          # The boot-timeout net below remains the cost backstop either way.
+          status_upsert "$(world_title)" "${PHASE_LINE}
+
+The server is running, but on an out-of-date build — clients will be turned away with a version error. It needs a manual reinstall of the game files; \`${SLASH_CMD} stop\` when you're done looking." 15158332 "[]" "[]"
+        else
+          status_upsert "$(world_title)" "${PHASE_LINE}
+
+Hang tight — the join details post here as soon as the server is ready." 16766720 "[]" "[]"
+        fi
+      fi
+    fi
+  fi
 
   # --- Boot-timeout safety net: if the server NEVER answers A2S (e.g. a wedged
   #     first boot / SteamCMD failure loop), stop the box so it can't bill forever.

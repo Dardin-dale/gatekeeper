@@ -68,6 +68,9 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     playerLeavePattern: profile.playerLeavePattern ?? '',
     // Flavor events the host announces to Discord (gated by the `events` toggle).
     events: profile.events ?? [],
+    // Pre-live boot stages (downloading/verifying/loading/failed) the monitor
+    // reports while awaiting first liveness, so "Starting…" says what it's doing.
+    bootPhases: profile.bootPhases ?? [],
     // Join details for the host's readiness embed, so "🟢 Server Online" renders
     // the same port + hint as /gate join and /gate status (util/join-info).
     join: profile.join.type === 'address'

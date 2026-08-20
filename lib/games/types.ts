@@ -103,6 +103,23 @@ export interface GameProfile {
    */
   events?: GameEvent[];
 
+  /**
+   * Optional: what the server is DOING before it answers a liveness check, read
+   * out of container logs. Without this the whole pre-live window — SteamCMD
+   * downloads, world load, a failed update — is one opaque "Starting…", which is
+   * what players see when a boot goes wrong (a stale-build server once sat
+   * "starting" for 45 min while actually running and unjoinable).
+   *
+   * Resolution each cycle, against the whole container log:
+   *   1. any entry with `failure: true` wins outright — a failed update must not
+   *      be masked by the later phases a stale-but-running server still logs;
+   *   2. otherwise the LAST matching entry wins, so list the rest in boot order
+   *      (earliest phase first, latest last).
+   * Publishes to SSM boot-phase (read by `/<cmd> status`) and edits the Discord
+   * status message in place.
+   */
+  bootPhases?: BootPhase[];
+
   /** Default EC2 instance type (overridable via the INSTANCE_TYPE env var). */
   instanceType: string;
   /** Persistent-data EBS volume size in GB. */
@@ -158,6 +175,34 @@ export interface GameProfile {
   mods?: ModsSpec;
 
   persona: Persona;
+}
+
+/**
+ * One stage of the pre-live boot, detected from container logs (see
+ * GameProfile.bootPhases). JSON-serializable — it rides game-profile.json.
+ */
+export interface BootPhase {
+  /** Stable id; also the value published to SSM boot-phase. */
+  id: string;
+  /** ERE matched against the container log (grep -E) to detect this phase. */
+  pattern: string;
+  /** Short human label for Discord / `/<cmd> status`, e.g. 'Downloading update'. */
+  label: string;
+  /** Leading emoji for the status line. Defaults to ⏳ when unset. */
+  emoji?: string;
+  /**
+   * Optional ERE with ONE capture group yielding a 0-100 progress number, taken
+   * from the last matching line (e.g. SteamCMD's `progress: 42.39`). Rendered
+   * next to the label so a long download reads as moving, not hung.
+   */
+  progressPattern?: string;
+  /**
+   * Marks a TERMINAL failure — the boot cannot succeed from here (e.g. SteamCMD
+   * exhausted its update job with the app still flagged Update Required). The
+   * monitor announces it immediately instead of burning the whole boot-timeout
+   * window, since the useful signal is "this will never come up", not "wait".
+   */
+  failure?: boolean;
 }
 
 /**

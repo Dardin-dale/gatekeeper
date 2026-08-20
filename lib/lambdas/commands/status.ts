@@ -23,7 +23,9 @@ import {
 } from "../utils/aws-clients";
 import {
   SSM_PARAMS,
+  BootPhaseStatus,
   getGuildDefaultWorldParam,
+  getBootPhase,
   getServerLive,
   getSessionPrivate,
 } from "../utils/params";
@@ -38,6 +40,14 @@ import { ACTIVE_GAME } from "../../games";
 import { personaEmbed, slash } from "./util/persona";
 import { buildJoinFields, joinHost } from "./util/join-info";
 import { getScheduledOpening } from "./schedule";
+
+/** "for 4m" / "for 1m 20s" — how long the current boot stage has been running. */
+function describeElapsed(sinceEpochSeconds: number): string {
+  const secs = Math.max(0, Math.floor(Date.now() / 1000) - sinceEpochSeconds);
+  if (secs < 60) return `for ${secs}s`;
+  const m = Math.floor(secs / 60);
+  return m < 60 ? `for ${m}m` : `for ${Math.floor(m / 60)}h ${m % 60}m`;
+}
 
 export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
   try {
@@ -58,9 +68,12 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
     // Instance running !== game joinable: the host monitor flips server-live on
     // its liveness transitions, so a booting game reads 'false' here.
     let gameLive = true;
+    // What the boot is DOING while gameLive is false (host monitor publishes it).
+    let bootPhase: BootPhaseStatus | null = null;
 
     if (status === 'running') {
       gameLive = await getServerLive();
+      if (!gameLive) bootPhase = await getBootPhase();
       try {
         const worldResult = await ssmClient.send(new GetParameterCommand({
           Name: SSM_PARAMS.ACTIVE_WORLD
@@ -113,10 +126,27 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
       statusText = 'Stopping';
       description = 'Server is shutting down...';
       embedColor = 0xff6600;
+    } else if (status === 'running' && bootPhase?.failure) {
+      // The boot cannot succeed (e.g. the game update failed and the server is
+      // serving a stale build). Report it as an error, not as "please wait" —
+      // waiting is exactly the wrong advice when nothing will change.
+      statusEmoji = bootPhase.emoji;
+      statusText = 'Needs attention';
+      description = `**${bootPhase.label}**\n\n` +
+        `The instance is up, but this will not resolve on its own — it needs an ` +
+        `operator. Players trying to join will be rejected.`;
+      embedColor = 0xff0000;
     } else if (status === 'running' && !gameLive) {
-      statusEmoji = '⏳';
+      // Say which stage it's in when the profile defines bootPhases, so a long
+      // SteamCMD download reads as progress rather than a hung "Starting…".
+      statusEmoji = bootPhase?.emoji ?? '⏳';
       statusText = 'Starting';
-      description = `The instance is up, but the ${ACTIVE_GAME.displayName} server is still ` +
+      const stage = bootPhase
+        ? `**${bootPhase.label}**` +
+          (bootPhase.progress !== undefined ? ` — ${bootPhase.progress}%` : '') +
+          (bootPhase.at ? ` _(${describeElapsed(bootPhase.at)})_` : '') + '\n\n'
+        : '';
+      description = `${stage}The instance is up, but the ${ACTIVE_GAME.displayName} server is still ` +
         `loading. The readiness ping posts here with the join details once it's joinable.`;
       embedColor = 0xffaa00;
     } else if (status === 'running') {
