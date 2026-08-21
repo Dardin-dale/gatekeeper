@@ -617,6 +617,26 @@ $DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
   aws cloudwatch put-metric-data --namespace "$NAMESPACE" --metric-name PlayerCount \
     --value "$PLAYERS" --unit Count --region "$REGION" > /dev/null 2>&1
 
+  # --- Memory headroom -> CloudWatch, alongside the player count so the two can be
+  #     read against each other: "how much RAM was left at N players" is the
+  #     question, and EC2 publishes no memory metric of its own. Host-level
+  #     (/proc/meminfo), so it covers the game container plus everything else.
+  #     MemAvailable, not MemFree — free excludes reclaimable page cache and reads
+  #     alarmingly low on a healthy box. Dimensioned by game because the namespace
+  #     is shared between them. ---
+  MEM_TOTAL_MB=$(awk '/^MemTotal:/ {printf "%d", $2/1024}' /proc/meminfo 2>/dev/null)
+  MEM_AVAIL_MB=$(awk '/^MemAvailable:/ {printf "%d", $2/1024}' /proc/meminfo 2>/dev/null)
+  if [ -n "$MEM_TOTAL_MB" ] && [ -n "$MEM_AVAIL_MB" ] && [ "$MEM_TOTAL_MB" -gt 0 ]; then
+    MEM_USED_PCT=$(( (MEM_TOTAL_MB - MEM_AVAIL_MB) * 100 / MEM_TOTAL_MB ))
+    log "Memory: ${MEM_AVAIL_MB}MB available of ${MEM_TOTAL_MB}MB (${MEM_USED_PCT}% used)"
+    aws cloudwatch put-metric-data --namespace "$NAMESPACE" --region "$REGION" \
+      --dimensions "Game=${GAME_ID}" \
+      --metric-name MemoryAvailableMB --value "$MEM_AVAIL_MB" --unit Megabytes > /dev/null 2>&1
+    aws cloudwatch put-metric-data --namespace "$NAMESPACE" --region "$REGION" \
+      --dimensions "Game=${GAME_ID}" \
+      --metric-name MemoryUsedPercent --value "$MEM_USED_PCT" --unit Percent > /dev/null 2>&1
+  fi
+
   # --- Extend button: only useful at 0 players (idle clock is paused otherwise),
   #     so show/hide it on the 0<->1 crossing by PATCHing just the message's row.
   #     Edge-triggered off PUBLISHED_BTN so we don't PATCH every cycle. ---

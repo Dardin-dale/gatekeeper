@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import * as cdk from "aws-cdk-lib";
 import { CfnOutput, CustomResource, Duration, Stack, StackProps, Tags } from "aws-cdk-lib";
 import { Provider } from "aws-cdk-lib/custom-resources";
@@ -50,12 +51,38 @@ import {
     LogGroup
 } from "aws-cdk-lib/aws-logs";
 
-// Bumped to force an instance replacement + EBS data-volume hand-off (see the
-// VolumeDetachResource custom resource + the instance tag below). MUST change for
-// any AMI / instance-type / user-data change, or CFN tries to re-attach the
-// still-attached data volume and the deploy rolls back. One constant so the two
-// consumers can never drift out of sync.
-const DEPLOYMENT_VERSION = '2026-06-13-v6';
+// The AMI the instance boots. PINNED (see machineImage below for why) and hoisted
+// here so it feeds the replacement fingerprint.
+// Refresh: aws ssm get-parameter --name \
+//   /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
+//   --query Parameter.Value --output text
+const AMI_ID = 'ami-0d45a4eba03d1e2cf'; // al2023-ami-2023.12.20260611.0-kernel-6.1-x86_64
+
+/**
+ * Identifies THIS instance configuration. It drives two things that must move
+ * together: the VolumeDetachResource (which only runs when its property changes)
+ * and the instance's DeploymentVersion tag. If they drift, CFN tries to attach a
+ * still-attached data volume and the deploy rolls back on "volume already
+ * attached".
+ *
+ * DERIVED, not hand-maintained. It used to be a literal that every AMI /
+ * instance-type / user-data change had to remember to bump — a rule enforced only
+ * by a comment, where forgetting produces a confusing rollback rather than a
+ * clear error. Hashing the three inputs that actually cause a replacement makes
+ * that impossible to get wrong in either direction: change one and the version
+ * moves automatically; change none and it stays put, so unrelated deploys never
+ * churn the instance.
+ *
+ * Inputs must be the COMPLETE set of replacement triggers — call this only after
+ * user-data is fully built.
+ */
+function replacementFingerprint(amiId: string, instanceType: string, userData: string): string {
+    const digest = createHash('sha256')
+        .update([amiId, instanceType, userData].join('\u0000'))
+        .digest('hex')
+        .slice(0, 12);
+    return `${instanceType}-${digest}`;
+}
 
 interface WorldConfig {
     /**
@@ -479,13 +506,21 @@ EOF`,
             onEventHandler: volumeManagerFunction,
         });
 
+        // Every input that forces a new instance, hashed into one value (see
+        // replacementFingerprint). user-data is finished being built by this point.
+        const deploymentVersion = replacementFingerprint(
+            AMI_ID,
+            instanceType.toString(),
+            userData.render(),
+        );
+
         // Custom Resource that ensures the volume is detached before instance creation
         const volumeDetach = new CustomResource(this, 'VolumeDetachResource', {
             serviceToken: volumeManagerProvider.serviceToken,
             properties: {
                 VolumeId: dataVolume.ref,
                 // Trigger update when deployment version changes
-                DeploymentVersion: DEPLOYMENT_VERSION,
+                DeploymentVersion: deploymentVersion,
             },
         });
 
@@ -502,15 +537,10 @@ EOF`,
             // PINNED, not latestAmazonLinux2023(): "latest" resolves to a fresh SSM
             // value whenever AWS rotates the image, so EVERY unrelated deploy (even a
             // Lambda-only change) silently triggered an instance replacement + the
-            // DeploymentVersion volume hand-off. cdk diff hid it (the template held an
-            // SSM {{resolve}} ref, not the literal id). Pinning means the AMI only
-            // changes when we bump it deliberately — then also bump DeploymentVersion.
-            // Refresh: aws ssm get-parameter --name \
-            //   /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
-            //   --query Parameter.Value --output text   (then update id + DeploymentVersion)
-            machineImage: MachineImage.genericLinux({
-                'us-west-2': 'ami-0d45a4eba03d1e2cf', // al2023-ami-2023.12.20260611.0-kernel-6.1-x86_64
-            }),
+            // volume hand-off. cdk diff hid it (the template held an SSM {{resolve}}
+            // ref, not the literal id). Pinning means the AMI only changes when we
+            // change AMI_ID — which the fingerprint then picks up on its own.
+            machineImage: MachineImage.genericLinux({ 'us-west-2': AMI_ID }),
             securityGroup: securityGroup,
             userData: userData,
             // User-data runs only at first boot, so a changed bootstrap must
@@ -533,7 +563,7 @@ EOF`,
         });
 
         // Add deployment version tag to force replacement when needed
-        Tags.of(this.ec2Instance).add('DeploymentVersion', DEPLOYMENT_VERSION);
+        Tags.of(this.ec2Instance).add('DeploymentVersion', deploymentVersion);
 
         // Ensure volume is detached from old instances before new instance is created
         this.ec2Instance.node.addDependency(volumeDetach);

@@ -145,7 +145,13 @@ export const valheim: GameProfile = {
     },
   ],
 
-  instanceType: 't3.medium',
+  // t3.large (8 GB) = upstream's RECOMMENDED spec. Was t3.medium, whose 4 GB
+  // nominal presents as ~3.75 GiB usable — under upstream's own 4 GB MINIMUM, and
+  // the container said so on every boot ("3.75 GiB is not enough memory"). Valheim's
+  // footprint has also grown per biome update (Ashlands-era servers are commonly
+  // cited around 6 GB), and this world runs BepInEx plus `-modifier resources more`,
+  // which raises entity counts. Roughly +$0.04/hr, only while a session is up.
+  instanceType: 't3.large',
   dataVolumeSizeGb: 12,
   autoShutdownMinutes: 15, // idle-stop after 15 min with no players (cost control)
   bootTimeoutMinutes: 45,  // generous: first boot SteamCMD-pulls the server image
