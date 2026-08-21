@@ -1,12 +1,26 @@
 /**
  * Volume Manager Lambda
  *
- * Custom Resource handler that ensures an EBS volume is detached from any
- * existing instances before a new instance is created. This allows for
- * graceful EC2 instance replacement without volume attachment conflicts.
+ * Custom Resource handler behind BOTH halves of the data-volume hand-off:
+ *
+ *   Action 'detach' (default)      - before the instance updates: detach the
+ *                                    volume from whatever holds it (stopping the
+ *                                    instance first) so a replacement can pick
+ *                                    it up.
+ *   Action 'ensure-attached'       - after the instance + CfnVolumeAttachment:
+ *                                    verify the volume ended up attached, and
+ *                                    attach it ourselves if not.
+ *
+ * The pairing is the point. A DeploymentVersion change always fires the detach,
+ * but CloudFormation only re-attaches when the instance was genuinely replaced
+ * (CfnVolumeAttachment keys on instanceId). Any update that changes the version
+ * WITHOUT replacing the instance used to leave the volume orphaned — that is
+ * exactly how the Valheim data volume was lost on 2026-08-21. The verifier turns
+ * detach-then-maybe-attach into a transaction: the deploy cannot succeed until
+ * the volume is attached again.
  */
 
-import { EC2Client, DescribeVolumesCommand, DetachVolumeCommand, DescribeInstancesCommand, StopInstancesCommand, waitUntilVolumeAvailable, waitUntilInstanceStopped } from '@aws-sdk/client-ec2';
+import { EC2Client, DescribeVolumesCommand, DetachVolumeCommand, AttachVolumeCommand, DescribeInstancesCommand, StopInstancesCommand, waitUntilVolumeAvailable, waitUntilVolumeInUse, waitUntilInstanceStopped } from '@aws-sdk/client-ec2';
 
 const ec2 = new EC2Client({});
 
@@ -20,6 +34,9 @@ interface CloudFormationEvent {
     PhysicalResourceId?: string;
     ResourceProperties: {
         VolumeId: string;
+        Action?: 'detach' | 'ensure-attached';
+        InstanceId?: string;   // ensure-attached: the instance that must hold the volume
+        Device?: string;       // ensure-attached: device name, e.g. /dev/xvdf
         CurrentInstanceId?: string;
     };
 }
@@ -135,12 +152,67 @@ async function detachVolume(volumeId: string, instanceId: string): Promise<void>
     console.log(`Volume ${volumeId} detached and available`);
 }
 
+async function attachVolume(volumeId: string, instanceId: string, device: string): Promise<void> {
+    console.log(`Attaching volume ${volumeId} to instance ${instanceId} at ${device}...`);
+
+    await ec2.send(new AttachVolumeCommand({
+        VolumeId: volumeId,
+        InstanceId: instanceId,
+        Device: device,
+    }));
+
+    await waitUntilVolumeInUse(
+        { client: ec2, maxWaitTime: 300 },
+        { VolumeIds: [volumeId] }
+    );
+
+    console.log(`Volume ${volumeId} attached to ${instanceId}`);
+}
+
+/**
+ * ensure-attached: runs AFTER the instance and CfnVolumeAttachment on every
+ * DeploymentVersion change. If the detach half fired without a paired
+ * replacement, the volume is sitting 'available' here — attach it back. If the
+ * instance is running when that happens, stop it: it booted without its data
+ * volume, so whatever it is serving is wrong, and the fleet's steady state is
+ * stopped-until-someone-starts-it anyway. The next /start boots with the
+ * volume present and mounts it normally.
+ */
+async function ensureAttached(volumeId: string, instanceId: string, device: string): Promise<string> {
+    const attachment = await getVolumeAttachment(volumeId);
+
+    if (attachment && attachment.instanceId === instanceId) {
+        console.log(`Volume ${volumeId} already attached to ${instanceId} (state: ${attachment.state})`);
+        return 'already-attached';
+    }
+
+    if (attachment && attachment.instanceId) {
+        // Attached to some OTHER instance: never steal it — fail the deploy loudly.
+        throw new Error(
+            `Volume ${volumeId} is attached to unexpected instance ${attachment.instanceId} ` +
+            `(expected ${instanceId}). Refusing to force a hand-off.`
+        );
+    }
+
+    await attachVolume(volumeId, instanceId, device);
+
+    const state = await getInstanceState(instanceId);
+    if (state === 'running') {
+        console.log(`Instance ${instanceId} booted without the data volume; stopping so the next start mounts it`);
+        await stopInstance(instanceId);
+    }
+    return 'reattached';
+}
+
 export async function handler(event: CloudFormationEvent): Promise<void> {
     console.log('Event:', JSON.stringify(event, null, 2));
 
     const volumeId = event.ResourceProperties.VolumeId;
     const currentInstanceId = event.ResourceProperties.CurrentInstanceId;
-    const physicalResourceId = event.PhysicalResourceId || `volume-manager-${volumeId}`;
+    const action = event.ResourceProperties.Action || 'detach';
+    // Distinct physical ids per action so the two resources never alias.
+    const physicalResourceId = event.PhysicalResourceId
+        || (action === 'ensure-attached' ? `volume-attach-${volumeId}` : `volume-manager-${volumeId}`);
 
     try {
         if (event.RequestType === 'Delete') {
@@ -155,7 +227,25 @@ export async function handler(event: CloudFormationEvent): Promise<void> {
             return;
         }
 
-        // For Create/Update, check if volume is attached to a different instance
+        if (action === 'ensure-attached') {
+            const instanceId = event.ResourceProperties.InstanceId;
+            const device = event.ResourceProperties.Device || '/dev/xvdf';
+            if (!instanceId) {
+                throw new Error('ensure-attached requires InstanceId');
+            }
+            const outcome = await ensureAttached(volumeId, instanceId, device);
+            await sendResponse(event, {
+                Status: 'SUCCESS',
+                PhysicalResourceId: physicalResourceId,
+                StackId: event.StackId,
+                RequestId: event.RequestId,
+                LogicalResourceId: event.LogicalResourceId,
+                Data: { VolumeId: volumeId, Outcome: outcome },
+            });
+            return;
+        }
+
+        // detach (default): check if volume is attached to a different instance
         const attachment = await getVolumeAttachment(volumeId);
 
         if (attachment && attachment.instanceId && attachment.instanceId !== currentInstanceId) {

@@ -41,6 +41,21 @@ if ! docker info > /dev/null 2>&1; then
   exit 1
 fi
 
+# The data volume MUST be mounted before we host anything. A boot without it
+# silently serves an empty world from the root disk (2026-08-21: the volume was
+# detached by a deploy and never re-attached). Wait up to 2 minutes for the
+# device — the deploy-time attach verifier may still be attaching it — then
+# refuse to start rather than run without the worlds.
+for _ in $(seq 1 24); do
+  mountpoint -q /mnt/game-data && break
+  [ -e /dev/nvme1n1 ] && mount -a 2>/dev/null || true
+  sleep 5
+done
+if ! mountpoint -q /mnt/game-data; then
+  echo "ERROR: /mnt/game-data is not mounted (data volume not attached?) — refusing to start"
+  exit 1
+fi
+
 # --- Read the game profile -------------------------------------------------
 GAME_ID=$(jq -r '.id' "$PROFILE")
 IMAGE=$(jq -r '.image' "$PROFILE")

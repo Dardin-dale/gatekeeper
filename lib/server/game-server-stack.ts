@@ -512,6 +512,7 @@ EOF`,
                 'ec2:DescribeVolumes',
                 'ec2:DescribeInstances',
                 'ec2:DetachVolume',
+                'ec2:AttachVolume',
                 'ec2:StopInstances',
             ],
             resources: ['*'], // EC2 describe actions require * resource
@@ -588,6 +589,28 @@ EOF`,
             instanceId: this.ec2Instance.instanceId,
             volumeId: dataVolume.ref,
         });
+
+        // The other half of the hand-off. The detach above fires on EVERY
+        // DeploymentVersion change, but CfnVolumeAttachment only re-attaches when
+        // the instance was genuinely replaced (it keys on instanceId). A version
+        // change without a replacement — exactly what orphaned the Valheim data
+        // volume on 2026-08-21 — used to end the deploy with the volume detached
+        // and nothing noticing. This verifier runs after the instance and the
+        // attachment, re-attaches the volume if CloudFormation didn't, and fails
+        // the deploy if it can't. Detach + attach are now a transaction.
+        const volumeAttachVerify = new CustomResource(this, 'VolumeAttachVerifyResource', {
+            serviceToken: volumeManagerProvider.serviceToken,
+            properties: {
+                Action: 'ensure-attached',
+                VolumeId: dataVolume.ref,
+                InstanceId: this.ec2Instance.instanceId,
+                Device: '/dev/xvdf',
+                // Re-run whenever the detach re-runs — same trigger, same value.
+                DeploymentVersion: deploymentVersion,
+            },
+        });
+        volumeAttachVerify.node.addDependency(volumeAttachment);
+        volumeAttachVerify.node.addDependency(this.ec2Instance);
 
         // Create Lambda for automated backup cleanup
         const backupCleanupFunction = new NodejsFunction(this, 'BackupCleanupFunction', {
