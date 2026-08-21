@@ -59,29 +59,45 @@ import {
 const AMI_ID = 'ami-0d45a4eba03d1e2cf'; // al2023-ami-2023.12.20260611.0-kernel-6.1-x86_64
 
 /**
+ * Bootstrap revision. Bump ONLY when user-data changes — that is a genuine
+ * replacement trigger (userDataCausesReplacement below), so the detach it causes
+ * is paired with a new instance that picks the volume back up.
+ */
+const USER_DATA_VERSION = 'v7-2026-08-21';
+
+/**
  * Identifies THIS instance configuration. It drives two things that must move
  * together: the VolumeDetachResource (which only runs when its property changes)
  * and the instance's DeploymentVersion tag. If they drift, CFN tries to attach a
  * still-attached data volume and the deploy rolls back on "volume already
  * attached".
  *
- * DERIVED, not hand-maintained. It used to be a literal that every AMI /
- * instance-type / user-data change had to remember to bump — a rule enforced only
- * by a comment, where forgetting produces a confusing rollback rather than a
- * clear error. Hashing the three inputs that actually cause a replacement makes
- * that impossible to get wrong in either direction: change one and the version
- * moves automatically; change none and it stays put, so unrelated deploys never
- * churn the instance.
+ * Composed of exactly the inputs that REPLACE the instance, and nothing else:
  *
- * Inputs must be the COMPLETE set of replacement triggers — call this only after
- * user-data is fully built.
+ *   - AMI_ID — changing the image builds a new instance. Automatic.
+ *   - USER_DATA_VERSION — a hand-bumped literal, because user-data cannot be
+ *     hashed safely: userData.render() is full of unresolved CDK tokens whose
+ *     numeric ids depend on allocation order, so the same config hashes
+ *     differently run to run. Hashing it would move this value on nearly every
+ *     deploy and detach the volume each time.
+ *
+ * ⚠️ INSTANCE TYPE IS DELIBERATELY EXCLUDED. CloudFormation updates it in place
+ * (stop -> modify -> start, same instance id), so including it fires the detach
+ * with no replacement to pair with. That orphaned a live data volume on
+ * 2026-08-21: the t3.medium -> t3.large bump detached Valheim's 12 GB volume,
+ * nothing reattached it, and the server came up with no worlds mounted. The data
+ * survived (RETAIN) but the server was unusable until it was reattached by hand.
+ *
+ * Anything added here MUST cause a genuine replacement AND be deterministic
+ * across synths. If it only mutates the instance, or its value can wobble, it
+ * does not belong. test/cdk/deployment-version.test.ts pins both properties.
  */
-function replacementFingerprint(amiId: string, instanceType: string, userData: string): string {
+function replacementFingerprint(amiId: string, userDataVersion: string): string {
     const digest = createHash('sha256')
-        .update([amiId, instanceType, userData].join('\u0000'))
+        .update([amiId, userDataVersion].join('\u0000'))
         .digest('hex')
         .slice(0, 12);
-    return `${instanceType}-${digest}`;
+    return `${userDataVersion}-${digest}`;
 }
 
 interface WorldConfig {
@@ -506,13 +522,10 @@ EOF`,
             onEventHandler: volumeManagerFunction,
         });
 
-        // Every input that forces a new instance, hashed into one value (see
-        // replacementFingerprint). user-data is finished being built by this point.
-        const deploymentVersion = replacementFingerprint(
-            AMI_ID,
-            instanceType.toString(),
-            userData.render(),
-        );
+        // The inputs that force a NEW instance (see replacementFingerprint —
+        // instance type is excluded on purpose, and user-data is represented by a
+        // bumped literal because its rendered form is not deterministic).
+        const deploymentVersion = replacementFingerprint(AMI_ID, USER_DATA_VERSION);
 
         // Custom Resource that ensures the volume is detached before instance creation
         const volumeDetach = new CustomResource(this, 'VolumeDetachResource', {
