@@ -254,15 +254,22 @@ post_status() { # $1=title $2=description $3=color $4=optional fields JSON $5=op
 # Returns non-zero when there's no message to edit (online was suppressed/off), so
 # callers can fall back to a fresh post. Editing is silent (no re-ping).
 edit_status() { # $1=title $2=description $3=color $4=optional fields JSON $5=optional components JSON
-  local url id payload
+  local url id payload code
   id=$(aws ssm get-parameter --name "$STATUS_MSG_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "none")
   if [ -z "$id" ] || [ "$id" = "none" ]; then return 1; fi
   url=$(get_webhook_url) || return 1
   if [ -z "$url" ] || [ "$url" = "None" ]; then return 1; fi
   payload=$(build_payload "$1" "$2" "$3" "${4:-[]}" "${5:-[]}" "${6:-}")
-  curl -s -m 10 -H "Content-Type: application/json" -X PATCH "${url}/messages/${id}" -d "$payload" > /dev/null 2>&1 \
-    || log "WARNING: status message edit failed"
-  return 0
+  code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 -H "Content-Type: application/json" \
+    -X PATCH "${url}/messages/${id}" -d "$payload" 2>/dev/null)
+  case "$code" in
+    2??) return 0 ;;
+    # The message no longer exists — report failure so the caller can recreate.
+    # Only 404 does this: transient errors (5xx, timeouts) must NOT, or a
+    # Discord blip would spawn a duplicate status message.
+    404) log "status message $id gone (HTTP 404)"; return 1 ;;
+    *)   log "WARNING: status message edit failed (HTTP ${code:-timeout})"; return 0 ;;
+  esac
 }
 
 # The active world's guild id (the pinned message is per-Discord-server).
@@ -328,10 +335,17 @@ create_pinned_status() { # $1=title $2=description $3=color $4=fields $5=compone
 # embed are deliberately the SAME message, so a session reads as one post updating
 # rather than stranding a stale "Downloading…" above the join details.
 status_upsert() { # same args as post_status (incl. optional $6 content)
-  local pinned id
+  local pinned id channel
   # The pinned message, when one exists, is always the target.
   if pinned=$(pinned_status) && [ -n "$pinned" ]; then
     id=${pinned%% *}
+    channel=${pinned##* }
+    # Re-pin once per boot: pinning an already-pinned message is a no-op, so
+    # this only matters when someone unpinned it by hand — it comes back.
+    if [ "${REPINNED:-0}" != "1" ]; then
+      pin_message "$channel" "$id" || true
+      REPINNED=1
+    fi
     # Keep the session pointer aligned so the offline Lambda edits this message too.
     [ "$(aws ssm get-parameter --name "$STATUS_MSG_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null)" != "$id" ] \
       && put_param "$STATUS_MSG_PARAM" "$id"
