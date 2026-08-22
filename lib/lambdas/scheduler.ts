@@ -56,6 +56,10 @@ export async function handler(event: ScheduleFireEvent): Promise<void> {
       console.log(`Active world set to ${event.world.name}`);
     }
     if (!SERVER_INSTANCE_ID) throw new Error('SERVER_INSTANCE_ID not set');
+    // A scheduled opening is a group event with no individual waiting on it, so
+    // the readiness doorbell should ping the room, not a person. 'here' is the
+    // sentinel the monitor renders as @here (a real starter is a Discord id).
+    await putParam(SSM_PARAMS.SESSION_STARTER, 'here');
     // No-op if already running — someone starting early never breaks the schedule.
     await ec2Client.send(new StartInstancesCommand({ InstanceIds: [SERVER_INSTANCE_ID] }));
     console.log(`Instance ${SERVER_INSTANCE_ID} start requested (scheduled opening ` +

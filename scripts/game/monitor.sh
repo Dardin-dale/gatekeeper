@@ -177,7 +177,8 @@ build_payload() { # $1=title $2=description $3=color $4=fields JSON $5=component
     --argjson components "${5:-[]}" --arg content "${6:-}" \
     '{username: $name, embeds: [{title: $title, description: $desc, color: $color}], components: $components}
      | if $content != "" then .content = $content
-         | .allowed_mentions = {parse: [], users: ([$content | scan("<@!?([0-9]+)>")] | flatten)}
+         | .allowed_mentions = {parse: (if ($content | test("@here|@everyone")) then ["everyone"] else [] end),
+                                users: ([$content | scan("<@!?([0-9]+)>")] | flatten)}
        else . end
      | if $desc == "" then .embeds[0] |= del(.description) else . end
      | if $footer != "" then .embeds[0].footer = {text: $footer} else . end
@@ -714,7 +715,7 @@ $DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
           # Ping whoever ran `start` — a failure nobody sees is the whole problem.
           STARTER=$(aws ssm get-parameter --name "$SESSION_STARTER_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "none")
           PING=""
-          case "$STARTER" in ''|none|None) ;; *) PING="<@${STARTER}>" ;; esac
+          case "$STARTER" in ''|none|None) ;; here) PING="@here" ;; *) PING="<@${STARTER}>" ;; esac
           status_upsert "$(world_title)" "${PHASE_LINE}
 
 The server came up, but its game files are out of date — clients will be turned away with a version error. **Restart** re-runs the update; if it fails again the files need a manual reinstall. Use \`${SLASH_CMD} stop\` if you'd rather shut it down." 15158332 "[]" "[{\"type\":1,\"components\":[${BTN_RESTART},${BTN_STOP}]}]" "$PING"

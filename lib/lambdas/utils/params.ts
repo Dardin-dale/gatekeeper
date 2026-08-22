@@ -57,7 +57,7 @@ export const SSM_PARAMS = {
   JOIN_CODE: `${SSM_PREFIX}/join-code`, // per-session lobby code scraped by the host monitor ('none' = absent)
   SERVER_LIVE: `${SSM_PREFIX}/server-live`, // 'true' while the game answers the host monitor's liveness checks
   BOOT_PHASE: `${SSM_PREFIX}/boot-phase`, // JSON {id,label,emoji,progress,failure,at} of the pre-live stage; 'none' once live
-  SESSION_STARTER: `${SSM_PREFIX}/session-starter`, // Discord user id that ran /<cmd> start, so a failed boot can ping them ('none' = unknown)
+  SESSION_STARTER: `${SSM_PREFIX}/session-starter`, // Discord user id that ran /<cmd> start ('none' = unknown, 'here' = scheduled opening -> @here)
   SESSION_PRIVATE: `${SSM_PREFIX}/session-private`, // 'true' for a quiet session: host skips the public online ping, join/status reply privately
   STATUS_MESSAGE_ID: `${SSM_PREFIX}/status-message-id`, // id of this session's readiness message; the offline notification edits it in place ('none' = post fresh)
   EXTEND_UNTIL: `${SSM_PREFIX}/extend-until`, // epoch-ms the host monitor holds off idle-shutdown until ('0'/absent = no grace)
