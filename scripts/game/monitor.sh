@@ -20,6 +20,7 @@ A2S=/usr/local/bin/a2s-query.js
 ACTIVITY_FILE=/tmp/gk_last_activity
 SEEN_LIVE_FLAG=/tmp/gk_seen_live   # set once the server first answers A2S this session
 LIVE_STATE_FILE=/tmp/gk_live       # "1" while last cycle was live (edge detection)
+PLAYER_SEEN_FLAG=/tmp/gk_seen_player # set once ANY player has joined this session
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"; }
 
@@ -116,7 +117,7 @@ invalidate_session_params() {
 }
 
 # Fresh session: clear edge/idle state so stale files can't trigger an instant shutdown.
-rm -f "$SEEN_LIVE_FLAG" "$LIVE_STATE_FILE"
+rm -f "$SEEN_LIVE_FLAG" "$LIVE_STATE_FILE" "$PLAYER_SEEN_FLAG"
 date +%s > "$ACTIVITY_FILE"
 invalidate_session_params
 # Drop LAST session's readiness message id at startup ONLY (not in
@@ -226,6 +227,23 @@ extend_active() {
   case "$until" in ''|*[!0-9]*) until=0 ;; esac
   now_ms=$(( $(date +%s) * 1000 ))
   if [ "$until" -gt "$now_ms" ]; then echo "yes"; else echo "no"; fi
+}
+
+# The readiness doorbell. The pinned dashboard is EDITED in place, and edits
+# never fire a Discord notification — so a session could come up silently and
+# idle-stop before anyone looks. This separate content-only post is the "it's
+# ready" alert, mentioning whoever ran `start` (they're the one waiting).
+# Content-only on purpose: it reads as a doorbell, not a second dashboard.
+post_ready_ping() { # $1 = message text
+  local url starter ping payload
+  url=$(get_webhook_url) || return 0
+  if [ -z "$url" ] || [ "$url" = "None" ]; then return 0; fi
+  starter=$(aws ssm get-parameter --name "$SESSION_STARTER_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "none")
+  case "$starter" in ''|none|None) ping="" ;; *) ping="<@${starter}> " ;; esac
+  payload=$(jq -n --arg name "$PERSONA_NAME" --arg icon "$PERSONA_ICON" --arg content "${ping}$1"     '{username: $name, content: $content,
+      allowed_mentions: {parse: [], users: ([$content | scan("<@!?([0-9]+)>")] | flatten)}}
+     | if $icon != "" then .avatar_url = $icon else . end')
+  curl -s -m 10 -H "Content-Type: application/json" -X POST "$url" -d "$payload"     > /dev/null 2>&1 || log "WARNING: ready ping failed"
 }
 
 post_discord() { # $1 = title, $2 = description, $3 = color (decimal), $4 = optional JSON embed-fields array
@@ -599,7 +617,7 @@ while true; do
 💤 Auto-shutdown is off — remember to \`${SLASH_CMD} stop\` when you're done."
       else
         DESC="${DESC}
-💤 Shuts down automatically after ${ASD} min idle."
+💤 Shuts down after $((ASD * 2)) min if nobody joins, ${ASD} min idle after that."
       fi
       # Private (quiet) session: skip the public readiness broadcast entirely —
       # players pull join details privately via `/<cmd> join`. `/<cmd> open`
@@ -613,11 +631,16 @@ while true; do
         # anyone in the channel could /join; true lockout needs a separate world.
         notify_enabled online && status_upsert "$WTITLE" "🔒 **Private — Live**
 Run \`${SLASH_CMD} join\` when the bot's status shows it's playing the game. The join address is never posted to the channel. Make the game public with \`${SLASH_CMD} open\`." 10181046 "[]" "$BTNS"
+        # No join details in the doorbell — private sessions pull those via /join.
+        notify_enabled online && post_ready_ping "🟢 **$WTITLE** is live — run \`${SLASH_CMD} join\` for the details."
       else
         # post_status captures the message id so the offline lambda edits THIS
         # message into the offline state (one message, Online -> Offline).
         notify_enabled online && status_upsert "$WTITLE" "🟢 **Online**
 $DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
+        READY_LINE="🟢 **$WTITLE** is live — join details are on the pinned status."
+        [ -n "$JOIN_CODE" ] && READY_LINE="🟢 **$WTITLE** is live — code \`${JOIN_CODE}\` (details on the pinned status)."
+        notify_enabled online && post_ready_ping "$READY_LINE"
       fi
     fi
   else
@@ -728,6 +751,7 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
   AUTO_SHUTDOWN=$(aws ssm get-parameter --name "$AUTO_SHUTDOWN_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "15")
   if [ "$PLAYERS" -gt 0 ]; then
     echo "$NOW" > "$ACTIVITY_FILE"
+    touch "$PLAYER_SEEN_FLAG"
   elif [ -f "$SEEN_LIVE_FLAG" ] && [ "$AUTO_SHUTDOWN" != "off" ] && [ "$AUTO_SHUTDOWN" != "disabled" ] && [ "$(extend_active)" = "yes" ]; then
     # Extend button pressed: hold off idle-shutdown until the grace expires. When
     # it does, the next cycle finds ACTIVITY_FILE stale and shuts down promptly —
@@ -735,6 +759,11 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
     log "Idle, but Extend grace is active — holding off shutdown"
   elif [ -f "$SEEN_LIVE_FLAG" ] && [ "$AUTO_SHUTDOWN" != "off" ] && [ "$AUTO_SHUTDOWN" != "disabled" ]; then
     THRESHOLD=$((AUTO_SHUTDOWN * 60))
+    # Nobody has joined yet this session: double the window. Whoever ran `start`
+    # is often not watching the channel the moment it comes up, and the normal
+    # window regularly stopped the box before they checked back. Once anyone
+    # has joined, leaves reset the clock and the normal window applies.
+    [ ! -f "$PLAYER_SEEN_FLAG" ] && THRESHOLD=$((THRESHOLD * 2))
     LAST=$(cat "$ACTIVITY_FILE" 2>/dev/null || echo "$NOW")
     IDLE=$((NOW - LAST))
     log "Idle for ${IDLE}s (threshold ${THRESHOLD}s)"
@@ -747,10 +776,10 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
       # post) when the session is public AND there's no message to edit.
       IDLE_PRIVATE=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
       if edit_status "$(world_title)" "💤 **Winding down** — backing up & shutting down.
-No players for ${AUTO_SHUTDOWN} min." 16763904 "[]" "[]"; then
+No players for $((THRESHOLD / 60)) min." 16763904 "[]" "[]"; then
         log "Edited status message to winding-down"
       elif [ "$IDLE_PRIVATE" != "true" ] && notify_enabled idle; then
-        post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904
+        post_discord "💤 Server Idle" "No players for $((THRESHOLD / 60)) min. Backing up and shutting down." 16763904
       fi
       /usr/local/bin/backup-server.sh --shutdown || log "WARNING: backup failed; stopping anyway (data persists on EBS)"
       invalidate_session_params
