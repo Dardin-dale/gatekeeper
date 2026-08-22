@@ -20,7 +20,6 @@ A2S=/usr/local/bin/a2s-query.js
 ACTIVITY_FILE=/tmp/gk_last_activity
 SEEN_LIVE_FLAG=/tmp/gk_seen_live   # set once the server first answers A2S this session
 LIVE_STATE_FILE=/tmp/gk_live       # "1" while last cycle was live (edge detection)
-PLAYER_SEEN_FLAG=/tmp/gk_seen_player # set once ANY player has joined this session
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"; }
 
@@ -117,7 +116,7 @@ invalidate_session_params() {
 }
 
 # Fresh session: clear edge/idle state so stale files can't trigger an instant shutdown.
-rm -f "$SEEN_LIVE_FLAG" "$LIVE_STATE_FILE" "$PLAYER_SEEN_FLAG"
+rm -f "$SEEN_LIVE_FLAG" "$LIVE_STATE_FILE"
 date +%s > "$ACTIVITY_FILE"
 invalidate_session_params
 # Drop LAST session's readiness message id at startup ONLY (not in
@@ -618,7 +617,7 @@ while true; do
 💤 Auto-shutdown is off — remember to \`${SLASH_CMD} stop\` when you're done."
       else
         DESC="${DESC}
-💤 Shuts down after $((ASD * 2)) min if nobody joins, ${ASD} min idle after that."
+💤 Shuts down automatically after ${ASD} min idle."
       fi
       # Private (quiet) session: skip the public readiness broadcast entirely —
       # players pull join details privately via `/<cmd> join`. `/<cmd> open`
@@ -752,7 +751,6 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
   AUTO_SHUTDOWN=$(aws ssm get-parameter --name "$AUTO_SHUTDOWN_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "15")
   if [ "$PLAYERS" -gt 0 ]; then
     echo "$NOW" > "$ACTIVITY_FILE"
-    touch "$PLAYER_SEEN_FLAG"
   elif [ -f "$SEEN_LIVE_FLAG" ] && [ "$AUTO_SHUTDOWN" != "off" ] && [ "$AUTO_SHUTDOWN" != "disabled" ] && [ "$(extend_active)" = "yes" ]; then
     # Extend button pressed: hold off idle-shutdown until the grace expires. When
     # it does, the next cycle finds ACTIVITY_FILE stale and shuts down promptly —
@@ -760,11 +758,6 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
     log "Idle, but Extend grace is active — holding off shutdown"
   elif [ -f "$SEEN_LIVE_FLAG" ] && [ "$AUTO_SHUTDOWN" != "off" ] && [ "$AUTO_SHUTDOWN" != "disabled" ]; then
     THRESHOLD=$((AUTO_SHUTDOWN * 60))
-    # Nobody has joined yet this session: double the window. Whoever ran `start`
-    # is often not watching the channel the moment it comes up, and the normal
-    # window regularly stopped the box before they checked back. Once anyone
-    # has joined, leaves reset the clock and the normal window applies.
-    [ ! -f "$PLAYER_SEEN_FLAG" ] && THRESHOLD=$((THRESHOLD * 2))
     LAST=$(cat "$ACTIVITY_FILE" 2>/dev/null || echo "$NOW")
     IDLE=$((NOW - LAST))
     log "Idle for ${IDLE}s (threshold ${THRESHOLD}s)"
@@ -777,10 +770,10 @@ Try \`${SLASH_CMD} start\` again (the next boot is faster, the download is cache
       # post) when the session is public AND there's no message to edit.
       IDLE_PRIVATE=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
       if edit_status "$(world_title)" "💤 **Winding down** — backing up & shutting down.
-No players for $((THRESHOLD / 60)) min." 16763904 "[]" "[]"; then
+No players for ${AUTO_SHUTDOWN} min." 16763904 "[]" "[]"; then
         log "Edited status message to winding-down"
       elif [ "$IDLE_PRIVATE" != "true" ] && notify_enabled idle; then
-        post_discord "💤 Server Idle" "No players for $((THRESHOLD / 60)) min. Backing up and shutting down." 16763904
+        post_discord "💤 Server Idle" "No players for ${AUTO_SHUTDOWN} min. Backing up and shutting down." 16763904
       fi
       /usr/local/bin/backup-server.sh --shutdown || log "WARNING: backup failed; stopping anyway (data persists on EBS)"
       invalidate_session_params
