@@ -239,9 +239,13 @@ post_ready_ping() { # $1 = message text
   url=$(get_webhook_url) || return 0
   if [ -z "$url" ] || [ "$url" = "None" ]; then return 0; fi
   starter=$(aws ssm get-parameter --name "$SESSION_STARTER_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "none")
-  case "$starter" in ''|none|None) ping="" ;; *) ping="<@${starter}> " ;; esac
+  # 'here' is the scheduler's sentinel (a scheduled opening has no single
+  # starter) — render it as a real @here, which needs the "everyone" parse
+  # scope, not a user id (a literal <@here> pings nobody).
+  case "$starter" in ''|none|None) ping="" ;; here) ping="@here " ;; *) ping="<@${starter}> " ;; esac
   payload=$(jq -n --arg name "$PERSONA_NAME" --arg icon "$PERSONA_ICON" --arg content "${ping}$1"     '{username: $name, content: $content,
-      allowed_mentions: {parse: [], users: ([$content | scan("<@!?([0-9]+)>")] | flatten)}}
+      allowed_mentions: {parse: (if ($content | test("@here|@everyone")) then ["everyone"] else [] end),
+                         users: ([$content | scan("<@!?([0-9]+)>")] | flatten)}}
      | if $icon != "" then .avatar_url = $icon else . end')
   curl -s -m 10 -H "Content-Type: application/json" -X POST "$url" -d "$payload"     > /dev/null 2>&1 || log "WARNING: ready ping failed"
 }
@@ -638,8 +642,16 @@ Run \`${SLASH_CMD} join\` when the bot's status shows it's playing the game. The
         # message into the offline state (one message, Online -> Offline).
         notify_enabled online && status_upsert "$WTITLE" "🟢 **Online**
 $DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
-        READY_LINE="🟢 **$WTITLE** is live — join details are on the pinned status."
-        [ -n "$JOIN_CODE" ] && READY_LINE="🟢 **$WTITLE** is live — code \`${JOIN_CODE}\` (details on the pinned status)."
+        # The doorbell carries the one token a player types: the join code when
+        # the game minted one (crossplay), else the address (vanilla Valheim, AF).
+        # The password stays spoilered on the pinned status, never in the ping.
+        if [ -n "$JOIN_CODE" ]; then
+          READY_LINE="🟢 **$WTITLE** is live — code \`${JOIN_CODE}\` (details on the pinned status)."
+        elif [ "$ADDRESS_WITH_PORT" = "true" ]; then
+          READY_LINE="🟢 **$WTITLE** is live at \`${JOIN_HOST}:${JOIN_PORT}\` (password on the pinned status)."
+        else
+          READY_LINE="🟢 **$WTITLE** is live at \`${JOIN_HOST}\` (port + password on the pinned status)."
+        fi
         notify_enabled online && post_ready_ping "$READY_LINE"
       fi
     fi
