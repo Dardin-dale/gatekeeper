@@ -6,15 +6,14 @@
     "discordServerId": "123456789012345678",
     "adminIds": "76561198000000000",
     "default": true,
-    "extraArgs": "-crossplay",
     "mods": []
   },
   {
-    "name": "ModdedWorld",
-    "worldName": "ModgardHard",
+    "name": "CrossplayHard",
+    "worldName": "Modgard",
     "password": "change-me-too",
     "discordServerId": "123456789012345678",
     "extraArgs": "-crossplay -modifier combat hard -modifier raids more",
-    "mods": ["EpicLoot", "BetterNetworking_Valheim"]
+    "mods": []
   }
 ]

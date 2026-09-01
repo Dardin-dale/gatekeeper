@@ -15,7 +15,7 @@ you actually play. Each game gets its own bot persona, stack, and slash command.
 - **Pay only while playing** — the server auto-stops after a configurable idle timeout (default 20 min);
   a stopped EC2 instance costs ~$0 for compute
 - **Player-aware auto-shutdown** — idle detection via Steam **A2S** query, with a profile-driven
-  log-heartbeat fallback for games that go A2S-silent (crossplay Valheim runs on PlayFab networking)
+  log-heartbeat fallback for games that go A2S-silent (Valheim with `-crossplay` runs on PlayFab networking)
 - **Bot presence = server status** — a sidecar on the host keeps the bot **online in Discord**
   with a live "Playing <game> (N online)" activity while the server runs; grey means stopped
 - **Stable join address** — connect via `your-subdomain.example.net:7777` (Route 53) instead of a changing IP
@@ -96,6 +96,9 @@ cp config/abiotic-factor.worlds.example.json config/abiotic-factor.worlds.json  
    **View Channels + Send Messages + Manage Webhooks**.
 2. **Configure your world** in `config/abiotic-factor.worlds.json` (name, save name, password, your
    Discord server ID). This file is gitignored — secrets stay out of git.
+   Valheim worlds are **vanilla by default**: no launch flags, no mods. Per-world `extraArgs` opts
+   into `-crossplay` (Xbox / Game Pass players + a join code, at the cost of PlayFab relay lag) or
+   world modifiers (`-modifier combat hard`); `mods` names entries in the S3 mod library.
 3. **Deploy:** `source .env && npm run deploy` (creates `GateStack-AbioticFactor`; ~10–15 min).
 4. **Register commands:** `npm run register-commands` (global commands take up to ~1 hr to appear).
 5. **Wire Discord → infra:** in the Developer Portal, set the **Interactions Endpoint URL** to the

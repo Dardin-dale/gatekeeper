@@ -50,7 +50,13 @@ export const valheim: GameProfile = {
     // These are local rollback only — our backupExcludes keeps them out of the
     // off-box S3 archive. Valheim's own native *_backup_auto-* saves aren't env-
     // tunable (the image exposes no knob) and are self-capped by the game.
-    staticEnv: { BACKUPS_MAX_COUNT: '7' },
+    // SERVER_PUBLIC is the image default, pinned on purpose: Steam's game-server
+    // SDK only answers A2S (the monitor's liveness/player-count source for
+    // vanilla worlds) while the server advertises itself. Verified locally:
+    // with `-public 0` the 2457 query socket is bound but never read, so the
+    // monitor would see a live server as booting forever. "Public" only means
+    // listed in the community browser — the password still gates joins.
+    staticEnv: { BACKUPS_MAX_COUNT: '7', SERVER_PUBLIC: 'true' },
     envMap: {
       serverName: 'SERVER_NAME',
       worldName: 'WORLD_NAME',
@@ -122,6 +128,9 @@ export const valheim: GameProfile = {
     },
     {
       id: 'loading',
+      // "Game server connected" is the Steam logon and fires in BOTH modes;
+      // "Opened PlayFab server" is crossplay-only. World generation (a fresh
+      // world takes ~1 min) happens inside this phase.
       pattern: 'Opened PlayFab server|Game server connected',
       label: 'Loading the world',
       emoji: '\u{1F30D}',
@@ -129,8 +138,10 @@ export const valheim: GameProfile = {
     {
       id: 'registering',
       // Crossplay registers with PlayFab; the join code lands moments later, and
-      // liveness comes from the "is active with N player(s)" heartbeat.
-      pattern: 'Register PlayFab server|registered with join code',
+      // liveness comes from the "is active with N player(s)" heartbeat. A vanilla
+      // world instead logs "Registering lobby" / "Opened Steam server" (verbatim
+      // from a local vanilla boot, 2026-09-01) and answers A2S seconds later.
+      pattern: 'Register PlayFab server|registered with join code|Registering lobby|Opened Steam server',
       label: 'Registering session',
       emoji: '\u{1F4E1}',
     },
@@ -149,19 +160,21 @@ export const valheim: GameProfile = {
   // nominal presents as ~3.75 GiB usable — under upstream's own 4 GB MINIMUM, and
   // the container said so on every boot ("3.75 GiB is not enough memory"). Valheim's
   // footprint has also grown per biome update (Ashlands-era servers are commonly
-  // cited around 6 GB), and this world runs BepInEx plus `-modifier resources more`,
-  // which raises entity counts. Roughly +$0.04/hr, only while a session is up.
+  // cited around 6 GB), and modded worlds (BepInEx) or `-modifier resources more`
+  // raise entity counts further. Roughly +$0.04/hr, only while a session is up.
   instanceType: 't3.large',
   dataVolumeSizeGb: 12,
   autoShutdownMinutes: 15, // idle-stop after 15 min with no players (cost control)
   bootTimeoutMinutes: 45,  // generous: first boot SteamCMD-pulls the server image
   messageTtlHours: 16,     // session status message auto-deletes 16h after offline
 
-  // ⚠️ With -crossplay (our worlds use it) Valheim switches to PlayFab
-  // networking and does NOT answer A2S on 2457 — verified live on the first
-  // GateStack-Valheim boot. Liveness + player count come from the log instead,
-  // and they need DIFFERENT lines (the source of a real idle-shutdown bug that
-  // kicked a mid-session player):
+  // A vanilla (Steam-networking) world answers A2S on 2457, so the monitor's
+  // primary path applies and neither pattern below is consulted.
+  // ⚠️ With -crossplay (a per-world opt-in via `extraArgs`) Valheim switches to
+  // PlayFab networking and does NOT answer A2S on 2457 — verified live on the
+  // first GateStack-Valheim boot. Liveness + player count come from the log
+  // instead, and they need DIFFERENT lines (the source of a real idle-shutdown
+  // bug that kicked a mid-session player):
   //   - COUNT: the join/leave EVENT lines, which carry the live count and are
   //     proven accurate under crossplay ("Player joined server ... now 1
   //     player(s)" / "Player connection lost server ... now 0 player(s)").
@@ -219,9 +232,13 @@ export const valheim: GameProfile = {
     },
   ],
 
-  // In practice players save the server once and reuse it: Steam → View →
-  // Game Servers → Favorites with <domain>:2457 remembers the password after
-  // the first join — the derived domain makes that favorite stable.
+  // Two ways in, by port: the in-game "Join IP" box takes the GAME port
+  // (<host>:2456, the Address field below); Steam's server browser (View → Game
+  // Servers → Favorites) takes the QUERY port (<host>:2457) and remembers the
+  // password after the first join — the derived domain keeps that favorite
+  // stable. A join code exists ONLY for worlds started with `-crossplay`
+  // (PlayFab); a vanilla world mints none, so the scraper finds nothing and the
+  // Join Code field is simply omitted — the hint must read well either way.
   join: {
     type: 'join-code',
     // The scraper takes the last token of the latest MATCH (grep -oE), so the
@@ -229,9 +246,9 @@ export const valheim: GameProfile = {
     logPattern: 'join code [0-9]+',
     codeLabel: 'Join Code', // Valheim's crossplay UI wording
     addressWithPort: true,  // Valheim's add-server box takes one "host:port" string
-    hint: 'Save the server in Steam favorites (View → Game Servers → Favorites) using its address — ' +
-      'Steam remembers the password after the first join. Or use the crossplay join code posted ' +
-      'here when the server comes online.',
+    hint: 'In-game: Join Game → Join IP with the address below. Or save it in Steam ' +
+      '(View → Game Servers → Favorites) using port 2457 instead — Steam remembers the ' +
+      'password after the first join. Crossplay worlds also get a join code.',
   },
 
   // The huginbot model, expressed as a ModsSpec: BepInEx plugin .dlls synced

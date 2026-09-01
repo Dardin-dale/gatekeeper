@@ -18,6 +18,10 @@ const LOG = {
   registering: 'supervisord: valheim-server 08/20/2026 20:45:00: Register PlayFab server "GjurdsIHOP" with IP 35.93.161.227:2456',
   joinCode: 'supervisord: valheim-server 08/20/2026 20:45:03: Session "GjurdsIHOP" registered with join code 528519',
   liveHeartbeat: 'supervisord: valheim-server 08/20/2026 20:45:05: Session "GjurdsIHOP" with join code 528519 and IP 35.93.161.227:2456 is active with 0 player(s)',
+  // Vanilla (no -crossplay) boot, verbatim from a local docker run 2026-09-01:
+  // Steam networking, no PlayFab session, no join code — A2S answers instead.
+  vanillaLobby: 'supervisord: valheim-server 09/01/2026 18:57:54: Registering lobby',
+  vanillaOpened: 'supervisord: valheim-server 09/01/2026 18:57:54: Opened Steam server',
   installFailed: "supervisord: valheim-updater ERROR! Failed to install app '896660' (Missing configuration)",
   downloadFailed: 'supervisord: valheim-updater ERROR - Failed to download Valheim server from Steam - retrying later',
 };
@@ -48,6 +52,14 @@ describe('valheim boot phases', () => {
     expect(hits(byId('loading'), LOG.playfab)).toBe(true);
     expect(hits(byId('registering'), LOG.registering)).toBe(true);
     expect(hits(byId('registering'), LOG.joinCode)).toBe(true);
+  });
+
+  it('a vanilla (non-crossplay) boot reaches "registering" via the Steam lobby lines', () => {
+    expect(hits(byId('registering'), LOG.vanillaLobby)).toBe(true);
+    expect(hits(byId('registering'), LOG.vanillaOpened)).toBe(true);
+    // ...and never through a PlayFab-only line.
+    expect(hits(byId('loading'), LOG.vanillaOpened)).toBe(false);
+    expect(resolve([LOG.connected, LOG.vanillaLobby, LOG.vanillaOpened])?.id).toBe('registering');
   });
 
   it("matches SteamCMD's thousands-separated counter", () => {

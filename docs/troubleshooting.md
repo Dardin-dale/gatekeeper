@@ -287,7 +287,7 @@ npm run deploy
 
 3. **Check server status in Discord**
    ```
-   /status check
+   /munin status
    ```
 
 4. **SSH to instance** (if desperate)
@@ -330,7 +330,7 @@ npm run deploy
 
 4. **Check instance is actually running**
    ```
-   /status check
+   /munin status
    ```
 
 ### Server Stops Immediately After Starting
@@ -348,7 +348,7 @@ npm run deploy
 
 1. **Verify server is running**
    ```
-   /status check
+   /munin status
    ```
 
 2. **Check firewall/ports**
@@ -356,13 +356,14 @@ npm run deploy
    - CDK should configure security group automatically
    - Verify in EC2 Console → Security Groups
 
-3. **Crossplay issues**
-   - Make sure `-crossplay` is in `VALHEIM_SERVER_ARGS`
-   - Redeploy if you just added it
+3. **No join code?** That's expected for a vanilla world. Valheim only mints a join code
+   with `-crossplay` (PlayFab networking), which is a per-world opt-in via `extraArgs` in
+   `config/valheim.worlds.json`. Vanilla worlds join by address (below). Crossplay is
+   widely reported to add lag; only enable it if you need Xbox / Game Pass players.
 
 4. **Try direct IP**
-   - Get public IP: `/status check`
-   - Connect directly: `SERVER_IP:2456`
+   - `/munin join` shows the address; in-game use Join Game → Join IP with `<host>:2456`
+   - Steam server browser (View → Game Servers → Favorites) uses the query port: `<host>:2457`
 
 ### Server Performance is Poor
 

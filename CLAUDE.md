@@ -76,6 +76,7 @@ lib/games/
 | Register slash commands | `npm run register-commands` |
 | Bot install / permission URL | `npm run cli discord invite-url` |
 | Local AF container | `docker compose -f docker-compose.local.yml up` |
+| Local Valheim container (vanilla) | `docker compose -f docker-compose.valheim.local.yml up` (`VH_ARGS=-crossplay` for PlayFab) |
 | Local A2S check | `node scripts/game/a2s-query.js 127.0.0.1 27015` |
 
 ## Discord commands (`/gate <sub>`)

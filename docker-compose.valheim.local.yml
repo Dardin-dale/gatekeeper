@@ -1,0 +1,34 @@
+# Local dev — boot a VANILLA Valheim dedicated server on your machine to validate
+# the image, ports, A2S query and log lines before any AWS deploy (Tier-2 test).
+#
+# Mirrors the GameProfile (lib/games/valheim.ts): same image, env mapping, ports
+# and /config volume the EC2 runtime uses. No SERVER_ARGS by default, so this is
+# the Steam-networking (non-crossplay) path: A2S answers on 2457 and no join
+# code is minted. Add `-crossplay` via VH_ARGS to see the PlayFab path instead:
+#   VH_ARGS="-crossplay" docker compose -f docker-compose.valheim.local.yml up
+#
+# First boot is SLOW: SteamCMD downloads the server (app 896660, ~1 GB) into
+# ./local/server/valheim/config (gitignored). Worlds persist under
+# ./local/server/valheim/config/worlds_local.
+#
+# Validate once it's up (in another terminal):
+#   node scripts/game/a2s-query.js 127.0.0.1 2457
+#   docker logs valheim-local | grep -iE 'join code|Game server connected|PlayFab'
+services:
+  valheim:
+    image: ghcr.io/community-valheim-tools/valheim-server
+    container_name: valheim-local
+    cap_add:
+      - SYS_NICE
+    environment:
+      SERVER_NAME: ${VH_SERVER_NAME:-GATEKeeper Local}
+      WORLD_NAME: ${VH_WORLD:-Midgard}
+      SERVER_PASS: ${VH_PASSWORD:-changeme1}
+      SERVER_PUBLIC: "true"   # the image default; Steam answers A2S only when advertising
+      SERVER_ARGS: ${VH_ARGS:-}
+      BACKUPS_MAX_COUNT: "7"
+    ports:
+      - "2456-2458:2456-2458/udp"
+    volumes:
+      - ./local/server/valheim/config:/config
+    restart: "no"
