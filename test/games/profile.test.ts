@@ -33,6 +33,40 @@ describe('game profile registry', () => {
   });
 });
 
+describe('admin list', () => {
+  it('every profile makes adminIds apply somewhere: an env var or a rendered file', () => {
+    for (const p of Object.values(GAME_PROFILES)) {
+      const viaEnv = Boolean(p.container.envMap.adminIds);
+      const viaFile = Boolean(p.container.adminFile);
+      expect(viaEnv || viaFile).toBe(true);
+      if (viaFile) {
+        // Relative to the data volume root, and templated per id.
+        expect(p.container.adminFile!.path.startsWith('/')).toBe(false);
+        expect(p.container.adminFile!.line).toContain('{id}');
+      }
+    }
+  });
+
+  it('abiotic factor renders Admin.ini ([Moderators] / Moderator=<SteamID64>) — its image has no admin env', () => {
+    expect(abioticFactor.container.envMap.adminIds).toBeUndefined();
+    expect(abioticFactor.container.adminFile).toEqual({
+      path: 'SaveGames/Server/Admin.ini',
+      header: '[Moderators]',
+      line: 'Moderator={id}',
+    });
+  });
+
+  it('valheim keeps the env-var route and declares no admin file', () => {
+    expect(valheim.container.envMap.adminIds).toBe('ADMINLIST_IDS');
+    expect(valheim.container.adminFile).toBeUndefined();
+  });
+
+  it('runtimeProfile emits adminFile for the host (null when the game has none)', () => {
+    expect(runtimeProfile(abioticFactor).adminFile).toEqual(abioticFactor.container.adminFile);
+    expect(runtimeProfile(valheim).adminFile).toBeNull();
+  });
+});
+
 describe('mods spec', () => {
   it('every declared mod kind installs inside a persistent volume mount', () => {
     // targetPath must live under a bind-mounted host dir, or installed mods

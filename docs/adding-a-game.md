@@ -17,6 +17,9 @@ Key fields (see `lib/games/types.ts` for the full contract):
 - `id` — stable kebab-case id (drives stack name, SSM subtree, config filename).
 - `container` — `image`, `name`, `staticEnv` (always-on), `envMap` (canonical field → this game's
   env var names), `volumes` (host↔container mounts on `/mnt/game-data`), `savePath`, `defaultArgs`.
+  Admins: map `envMap.adminIds` if the image takes an admin env var (Valheim's `ADMINLIST_IDS`);
+  otherwise set `adminFile` (`{ path, header?, line }`) and the host renders the world's `adminIds`
+  into that file on the data volume before each start (AF's `SaveGames/Server/Admin.ini`).
 - `ports` + `queryPort` — opened on the security group. **`queryPort` is required**: monitoring
   (player count, liveness, idle shutdown) is done via Steam A2S, so the game must expose A2S.
 - `instanceType`, `dataVolumeSizeGb` — sizing (override instance with `INSTANCE_TYPE`).

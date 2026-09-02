@@ -33,6 +33,9 @@ export const templateGame: GameProfile = {
     },
     volumes: [{ hostPath: '/mnt/game-data/data', containerPath: '/data' }],
     savePath: 'TODO/relative/save/path',
+    // If the image has no admin env var, have the host render adminIds into a
+    // file on the data volume instead (see types.ts AdminFileSpec):
+    // adminFile: { path: 'TODO/admins.txt', line: '{id}' },
   },
 
   ports: [{ protocol: 'udp', from: 0, to: 0 }], // TODO real game ports

@@ -8,8 +8,10 @@ set -euo pipefail
 #
 # We back up the ENTIRE data/saves volume (not just the world dir) so we also
 # capture things that live alongside the worlds — for Abiotic Factor that's the
-# admin list (SaveGames/Server/Admin.ini) and server config (Config/WindowsServer),
-# which sit outside savePath. Logs + crash reports are excluded as disposable.
+# server config (Config/WindowsServer), which sits outside savePath. (Admin.ini
+# is rendered from the world's adminIds on every start — see the profile's
+# adminFile — so it's reproducible, not something the backup must preserve.)
+# Logs + crash reports are excluded as disposable.
 # This restores byte-for-byte by extracting back into the data mount.
 #
 # Layout in S3: backups/<game-id>/<timestamp>.tar.gz

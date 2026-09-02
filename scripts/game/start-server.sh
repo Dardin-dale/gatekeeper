@@ -156,6 +156,37 @@ if [ "$MODS_JSON" != "[]" ]; then
   fi
 fi
 
+# --- Render the admin file (images with no admin env var) --------------------
+# Profile `adminFile` = { path (relative to the data volume root), header?,
+# line ('{id}' placeholder) }. Rendered from the world's space-separated
+# adminIds so the admin list is config-driven, not hand-maintained on the
+# volume. A world WITHOUT adminIds leaves any existing file alone.
+ADMIN_FILE_PATH=$(jq -r '.adminFile.path // empty' "$PROFILE")
+if [ -n "$ADMIN_FILE_PATH" ]; then
+  if [ -n "$ADMIN_IDS" ]; then
+    DATA_HOST=$(jq -r '.volumes[-1].hostPath' "$PROFILE")
+    ADMIN_FILE="${DATA_HOST}/${ADMIN_FILE_PATH}"
+    ADMIN_HEADER=$(jq -r '.adminFile.header // empty' "$PROFILE")
+    ADMIN_LINE=$(jq -r '.adminFile.line' "$PROFILE")
+    mkdir -p "$(dirname "$ADMIN_FILE")"
+    {
+      [ -n "$ADMIN_HEADER" ] && echo "$ADMIN_HEADER"
+      N=0
+      for id in $ADMIN_IDS; do
+        # SteamID64s only — refuse anything that could smuggle extra INI lines.
+        if echo "$id" | grep -Eq '^[0-9]{17}$'; then
+          echo "${ADMIN_LINE//\{id\}/$id}"; N=$((N + 1))
+        else
+          echo "WARNING: ignoring malformed admin id '$id'" >&2
+        fi
+      done
+      echo "Rendered ${N} admin(s) -> ${ADMIN_FILE}" >&2
+    } > "${ADMIN_FILE}.tmp" && mv -f "${ADMIN_FILE}.tmp" "$ADMIN_FILE"
+  else
+    echo "NOTICE: world sets no adminIds; leaving ${ADMIN_FILE_PATH} as-is"
+  fi
+fi
+
 # --- Build docker args from the profile ------------------------------------
 ENV_ARGS=(); PORT_ARGS=(); VOL_ARGS=()
 

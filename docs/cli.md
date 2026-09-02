@@ -130,9 +130,9 @@ Seed archives are the same format as backups — the data volume tarred from its
 `s3://<backup-bucket>/bootstrap/<game-id>/`, a separate prefix the backup rotation never touches.
 
 1. **Lay the save out like the data volume root.** For Abiotic Factor that means the directory you
-   push contains `SaveGames/Server/Worlds/<WorldSaveName>/` (plus optionally
-   `SaveGames/Server/Admin.ini` and `Config/WindowsServer/`). `world push` warns if the expected
-   `savePath` subtree is missing.
+   push contains `SaveGames/Server/Worlds/<WorldSaveName>/` (plus optionally `Config/WindowsServer/`;
+   `SaveGames/Server/Admin.ini` is regenerated from the world's `adminIds` on every start, so it
+   needn't ship). `world push` warns if the expected `savePath` subtree is missing.
 2. **Push it:** `npm run cli world push ./friends-save FriendsWorld` — tars and uploads to
    `bootstrap/<game-id>/FriendsWorld.tar.gz`. (A `.tar.gz` in the right format — e.g. one from
    `backup pull` — can be pushed as-is.) A bare name resolves in the staging dir:

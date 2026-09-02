@@ -356,6 +356,49 @@ is already in place) + per-game data-plane stacks (deploy/destroy independently 
 isolation). Not planned; recorded so the door stays open. The `commandName` router field already exists,
 so adopting it later is additive, not a rewrite.
 
+### Parallel worlds — one instance per world (or per guild), started as needed (ROADMAP, not started)
+Explored 2026-09-01 (pre-Reddit). Today a game stack is ONE instance + ONE data volume + ONE
+container on fixed ports, and the single-session assumption is baked in three places: (1) the
+per-session SSM keys (`active-world`, `player-count`, `server-live`, `boot-phase`, `join-code`,
+`session-private`, `session-starter`, `extend-until`) live directly under the game subtree;
+(2) the Lambdas know exactly one `SERVER_INSTANCE_ID`, and the offline-notification + Route 53
+EventBridge rules filter on that id; (3) `/gate start` refuses if the instance is running at all.
+
+**Rejected: two containers on one bigger instance** (the hosting-site / Pterodactyl model — many
+servers per always-on box with port offsets + cgroup limits). It fights the cost premise: the
+instance type is fixed at deploy, so a solo session pays the two-server rate; t3 credits drain ~2x;
+and both containers would share the SteamCMD install (concurrent updaters) and, for AF, the whole
+`Saved/` mount (logs/config collide).
+
+**Chosen direction: instance per world (or per guild), started on demand.** Cost matches the
+project premise — a stopped slot costs only its EBS (~$1–2/mo for 20 GB gp3), compute is hourly and
+only for worlds actually live, and each world updates independently (smaller "update failed" blast
+radius). Game files duplicate per volume (EBS can't be shared across instances) — storage, not
+correctness.
+
+Blast radius, in the order to land it:
+- **SSM re-keying first** — every per-session key moves under `/gatekeeper/<game>/<slot>/…`;
+  `active-world` becomes a world→instance map. Everything else keys off this.
+- **CDK**: refactor the stack into a per-slot construct iterated from the worlds config. The
+  DeploymentVersion / volume-detach coupling multiplies per slot — that footgun gets N× sharper.
+- **Lambdas**: start/stop/status/join/open/schedule resolve "which instance" (is *this world*
+  live? is it live on another slot?); the offline Lambda needs instance-id → world/guild reverse
+  lookup; host scripts gain a `SLOT_ID` in `/etc/gatekeeper.conf` (monitor/backup are already
+  per-instance and barely change).
+- **DNS**: one record per slot (`<world>.abiotic.<domain>`); the Route 53 updater picks the record.
+- **Pin/status**: keep ONE pinned status per guild and render one row per live world. Worlds are
+  already guild-tagged and webhook/default-world/pin are per-guild, so **instance-per-guild is the
+  smallest version with the biggest payoff** (two friend groups, two boxes; worlds within a guild
+  still switch on that guild's box). Per-world pins rejected: noisy, N message lifecycles to manage.
+- **Open question — backup unit.** Today `backup-server.sh` archives the whole data volume per game
+  (all worlds + AF `Admin.ini` / `Config/`, Valheim `/config`; SteamCMD game files are already NOT
+  archived). A per-world archive of `savePath/<worldName>` is the portable unit a world needs to
+  move between slots, and the original intent was world-saves-only. Remaining blocker for pure
+  saves-only: AF's server config (`Config/WindowsServer/`) is hand-maintained on the volume. (AF's
+  admin list was the other one — closed 2026-09-01: `GameProfile.container.adminFile` has the host
+  render `Admin.ini` from the world's `adminIds` on every start, mirroring Valheim's env-derived
+  `ADMINLIST_IDS`.) Decide when this phase starts.
+
 ---
 
 ## Testing strategy (tiers)

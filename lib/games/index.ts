@@ -50,6 +50,8 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     // image's own backup dir inside the volume — see types.ts backupExcludes).
     backupExcludes: profile.container.backupExcludes ?? [],
     defaultArgs: profile.container.defaultArgs ?? '',
+    // Host-rendered admin list for images with no admin env var (see types.ts).
+    adminFile: profile.container.adminFile ?? null,
     ports: profile.ports,
     queryPort: profile.queryPort,
     // ERE for the per-session lobby/join code in container logs (empty = none).

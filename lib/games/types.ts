@@ -334,6 +334,27 @@ export interface ContainerSpec {
   backupExcludes?: string[];
   /** Launch args always applied for this game (combined with a world's extraArgs). */
   defaultArgs?: string;
+  /**
+   * For games whose image has NO admin env var (so `envMap.adminIds` can't
+   * apply): the host renders the world's `adminIds` into this file on the data
+   * volume before every start, making the admin list reproducible from
+   * `config/<game>.worlds.json` instead of hand-maintained on the volume.
+   * e.g. AF: { path: 'SaveGames/Server/Admin.ini', header: '[Moderators]',
+   *            line: 'Moderator={id}' }.
+   * Only written when the world sets `adminIds`; a world without them leaves
+   * an existing file untouched. Games with an admin env var (Valheim's
+   * ADMINLIST_IDS) use `envMap.adminIds` and omit this.
+   */
+  adminFile?: AdminFileSpec;
+}
+
+export interface AdminFileSpec {
+  /** File path relative to the data volume root (the LAST entry in `volumes`). */
+  path: string;
+  /** Optional first line(s) of the file, e.g. an INI section header. */
+  header?: string;
+  /** Per-id line template; `{id}` is replaced with each id from `adminIds`. */
+  line: string;
 }
 
 export interface EnvMap {

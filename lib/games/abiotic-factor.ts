@@ -31,6 +31,21 @@ export const abioticFactor: GameProfile = {
       password: 'ServerPassword',
       worldName: 'WorldSaveName', // dedicated env var; default 'Cascade'
       extraArgs: 'AdditionalArgs',
+      // No adminIds: the image exposes no admin env (verified against its
+      // entrypoint.sh). Admins come from `adminFile` below instead.
+    },
+    // AF reads its admin list from Admin.ini at startup (no env var, no live
+    // reload). Format per the DFJacob dedicated-server guide: a `[Moderators]`
+    // section with one `Moderator=<SteamID64>` line per admin. The host renders
+    // a world's `adminIds` (space-separated SteamID64s) into it before each
+    // start, so admins are config-driven like Valheim's ADMINLIST_IDS. Steam
+    // accounts only — AF admin lists don't work for Xbox/PlayStation players.
+    // Alternative without ids: per-world extraArgs `-AdminPassword=<pw>` unlocks
+    // the in-game admin menu for anyone with the password.
+    adminFile: {
+      path: 'SaveGames/Server/Admin.ini',
+      header: '[Moderators]',
+      line: 'Moderator={id}',
     },
     // Mirrors the upstream compose: gamefiles -> /server, saves -> /server/AbioticFactor/Saved.
     volumes: [
