@@ -164,6 +164,9 @@ export const abioticFactor: GameProfile = {
       label: 'Game update FAILED — server is on an outdated build, clients will be rejected',
       emoji: '⚠️',
       failure: true,
+      hint: 'The server came up, but its game files are out of date — clients will be '
+        + 'turned away with a version error. **Restart** re-runs the update; if it fails '
+        + 'again the files need a manual reinstall.',
     },
   ],
 

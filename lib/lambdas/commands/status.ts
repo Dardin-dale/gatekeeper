@@ -126,13 +126,16 @@ export async function handleStatusCommand(): Promise<APIGatewayProxyResult> {
       description = 'Server is shutting down...';
       embedColor = 0xff6600;
     } else if (status === 'running' && bootPhase?.failure) {
-      // An error, not a "please wait": waiting is the wrong advice when nothing
-      // will change on its own.
+      // An error, not a "please wait". What fixes it is per game (BootPhase.hint):
+      // AF needs a Restart, Valheim's image retries by itself — the generic copy
+      // is only the fallback for a profile that didn't say.
       statusEmoji = bootPhase.emoji;
       statusText = 'Needs attention';
-      description = `**${bootPhase.label}**\n\n` +
-        `The instance is up, but this will not resolve on its own — it needs an ` +
-        `operator. Players trying to join will be rejected.`;
+      description = `**${bootPhase.label}**` +
+        (bootPhase.at ? ` _(${describeElapsed(bootPhase.at)})_` : '') + `\n\n` +
+        (bootPhase.hint ??
+          `The instance is up, but this will not resolve on its own — it needs an ` +
+          `operator. Players trying to join will be rejected.`);
       embedColor = 0xff0000;
     } else if (status === 'running' && !gameLive) {
       // Name the stage when the profile defines bootPhases, so a long download

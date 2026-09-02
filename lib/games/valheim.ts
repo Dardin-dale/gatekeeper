@@ -65,7 +65,35 @@ export const valheim: GameProfile = {
       adminIds: 'ADMINLIST_IDS',
       extraArgs: 'SERVER_ARGS',
     },
-    volumes: [{ hostPath: '/mnt/game-data/config', containerPath: '/config' }],
+    volumes: [
+      // The image ships SteamCMD at /opt/steamcmd (chown'd by its bootstrap) as
+      // a build-time snapshot, so every fresh container self-updated it first
+      // (~20 s, a restart mid-command). Persisting the dir — seeded from the
+      // image, since a bind mount would otherwise hide it — makes that once per
+      // Valve release instead of once per boot. (Boot-time cache, not the
+      // "Missing configuration" fix: that's `tmpfs` below.)
+      { hostPath: '/mnt/game-data/steamcmd', containerPath: '/opt/steamcmd', seedFromImage: true },
+      // The server install (dl/server + server/, ~3.5 GB). Upstream documents
+      // "a fresh volume mount under /opt/valheim" as the supported layout and its
+      // bootstrap mkdirs/chowns everything inside it. Without this every boot
+      // re-downloads 1.75 GB; with it the update is a manifest check + validate.
+      // Neither dir is under the data root (the LAST entry), so the S3 backup
+      // tar and `restore` never see them.
+      { hostPath: '/mnt/game-data/gamefiles', containerPath: '/opt/valheim' },
+      { hostPath: '/mnt/game-data/config', containerPath: '/config' },
+    ],
+    // THE fix for the "ERROR! Failed to install app '896660' (Missing
+    // configuration)" boots (2026-08-20, 2026-09-02 ×3). The image bakes a
+    // SteamCMD app-info cache into /home/valheim/Steam/appcache at build time;
+    // months later it's stale in a way that makes the FIRST app_update of every
+    // fresh container fail. The failed run refreshes the cache, which is why the
+    // image's */15 update cron always succeeded 5–15 min later. Isolated on the
+    // host 2026-09-02 in throwaway containers: stale HOME → fails; stale HOME
+    // minus appcache → downloads; minus config → still fails; wiped → downloads.
+    // An empty tmpfs there = the proven-good state on every boot (the cache is
+    // ~2 MB, refetched in seconds). Persisting /opt/steamcmd alone did NOT fix
+    // it — the self-update restart mid-command was a red herring.
+    tmpfs: ['/home/valheim/Steam/appcache'],
     savePath: 'worlds_local', // /config/worlds_local
     // Exclude all THREE local backup layers that pile up inside the volume — they're
     // cheap in-place rollback, not DR, and archiving them compounds our S3 tar every
@@ -147,12 +175,21 @@ export const valheim: GameProfile = {
     },
     {
       id: 'update-failed',
-      // Both verbatim from the 2026-08-20 wedge. "Missing configuration" is
-      // SteamCMD losing force_install_dir across its own self-update restart.
+      // Both verbatim from the 2026-08-20 wedge. "Missing configuration" is the
+      // image's stale build-time app-info cache (see `container.tmpfs` for the
+      // fix). The image does NOT give up: its updater is re-poked by cron every
+      // 15 min and the second run — cache now refreshed — pulls cleanly
+      // (2026-09-02: failed 20:12, cron 20:15, live 20:17). Pre-fix, Restart was
+      // the WRONG advice: a fresh container shipped the stale cache again.
       pattern: 'ERROR! Failed to install app|Failed to download Valheim server from Steam',
       label: 'Server update FAILED \u2014 the server never launched',
       emoji: '\u{26A0}',
       failure: true,
+      hint: 'The image retries the update on its own at the next quarter-hour '
+        + '(:00, :15, :30, :45) and the server launches right after \u2014 usually '
+        + 'nothing to do but wait. **Restart** retries immediately instead; if the '
+        + 'update fails twice in a row, something else is wrong (Steam outage, full '
+        + 'disk) \u2014 check the host log.',
     },
   ],
 

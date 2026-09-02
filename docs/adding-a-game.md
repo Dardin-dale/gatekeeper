@@ -16,7 +16,12 @@ Key fields (see `lib/games/types.ts` for the full contract):
 
 - `id` — stable kebab-case id (drives stack name, SSM subtree, config filename).
 - `container` — `image`, `name`, `staticEnv` (always-on), `envMap` (canonical field → this game's
-  env var names), `volumes` (host↔container mounts on `/mnt/game-data`), `savePath`, `defaultArgs`.
+  env var names), `volumes` (host↔container mounts on `/mnt/game-data`; the LAST one is the data
+  root the backup tars — put caches like a server install before it; `seedFromImage: true` copies
+  what the image ships at that path into the host dir on first use, for self-updating tooling the
+  image bundles such as Valheim's `/opt/steamcmd`), `tmpfs` (container paths mounted empty on
+  every start to hide state the image bakes in stale — Valheim's SteamCMD app-info cache),
+  `savePath`, `defaultArgs`.
   Admins: map `envMap.adminIds` if the image takes an admin env var (Valheim's `ADMINLIST_IDS`);
   otherwise set `adminFile` (`{ path, header?, line }`) and the host renders the world's `adminIds`
   into that file on the data volume before each start (AF's `SaveGames/Server/Admin.ini`).

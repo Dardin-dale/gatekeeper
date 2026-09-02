@@ -408,6 +408,7 @@ detect_boot_phase() {
   fi
   echo "$winner" | jq -c --arg prog "$prog" --argjson at "$(date +%s)" \
     '{id, label, emoji: (.emoji // "\u23f3"), failure: (.failure // false), at: $at}
+     + (if .hint then {hint} else {} end)
      + (if $prog != "" then {progress: ($prog | tonumber)} else {} end)'
 }
 
@@ -723,18 +724,23 @@ $DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
       BOOT_PRIVATE=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
       if [ "$BOOT_PRIVATE" != "true" ] && notify_enabled boot && notify_enabled online; then
         if [ "$(echo "$PHASE_JSON" | jq -r '.failure')" = "true" ]; then
-          # Terminal. Extend is absent (no idle clock to extend), and this does
-          # NOT stop the instance: the box may still serve an older build, so
-          # teardown stays the operator's call with boot-timeout as the backstop.
+          # Extend is absent (no idle clock to extend), and this does NOT stop
+          # the instance: the box may still serve an older build, or (Valheim)
+          # the image may still recover on its own — so teardown stays the
+          # operator's call with boot-timeout as the backstop. The fix is per
+          # game (BootPhase.hint): the same generic "hit Restart" would be
+          # actively wrong for Valheim, where a fresh container re-hits the wedge.
           # Ping whoever ran `start` — a failure nobody sees is the whole problem.
           # The ping is a separate doorbell post, NOT content on the pinned
           # message: that message is edited across sessions and would carry the
           # mention forever.
           WTITLE_FAILED="$(world_title)"
+          PHASE_HINT=$(echo "$PHASE_JSON" | jq -r '.hint // empty')
+          [ -z "$PHASE_HINT" ] && PHASE_HINT="The instance is up, but this will not resolve on its own — it needs an operator. Players trying to join will be rejected. **Restart** re-runs the update."
           status_upsert "$WTITLE_FAILED" "${PHASE_LINE}
 
-The server came up, but its game files are out of date — clients will be turned away with a version error. **Restart** re-runs the update; if it fails again the files need a manual reinstall. Use \`${SLASH_CMD} stop\` if you'd rather shut it down." 15158332 "[]" "[{\"type\":1,\"components\":[${BTN_RESTART},${BTN_STOP}]}]"
-          post_ready_ping "⚠️ **$WTITLE_FAILED** failed to update — it's up but unjoinable. Hit **Restart** on the pinned status, or \`${SLASH_CMD} stop\`."
+${PHASE_HINT} Use \`${SLASH_CMD} stop\` if you'd rather shut it down." 15158332 "[]" "[{\"type\":1,\"components\":[${BTN_RESTART},${BTN_STOP}]}]"
+          post_ready_ping "⚠️ **$WTITLE_FAILED** hit a problem while updating — it's up but not joinable yet. Details on the pinned status."
         else
           status_upsert "$(world_title)" "${PHASE_LINE}
 

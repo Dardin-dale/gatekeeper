@@ -45,6 +45,7 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     staticEnv: profile.container.staticEnv,
     envMap: profile.container.envMap,
     volumes: profile.container.volumes,
+    tmpfs: profile.container.tmpfs ?? [], // empty tmpfs mounts (hide stale image state)
     savePath: profile.container.savePath,
     // Game-specific disposable dirs the host's backup tar skips (e.g. a game
     // image's own backup dir inside the volume — see types.ts backupExcludes).

@@ -196,11 +196,20 @@ export interface BootPhase {
    */
   progressPattern?: string;
   /**
-   * Marks a TERMINAL failure — the boot cannot succeed from here (e.g. SteamCMD
-   * left the app flagged Update Required). Announced immediately rather than
-   * after the boot-timeout window: the signal is "this will never come up".
+   * Marks a failure the boot won't recover from by itself within normal
+   * patience — announced immediately rather than after the boot-timeout window.
+   * Whether that's truly terminal (AF: SteamCMD leaves the app flagged Update
+   * Required, needs a Restart) or merely slow (Valheim's image retries the
+   * update itself on the next quarter-hour) is per game — say which in `hint`.
    */
   failure?: boolean;
+  /**
+   * Game-specific advice rendered under a `failure` phase's label, in the pinned
+   * status message and `/<cmd> status`: what actually fixes THIS failure. Keep
+   * the mechanics honest (a "hit Restart" that re-triggers the wedge is worse
+   * than silence). Falls back to generic "needs an operator" copy when unset.
+   */
+  hint?: string;
 }
 
 /**
@@ -322,6 +331,16 @@ export interface ContainerSpec {
   envMap: EnvMap;
   /** Host <-> container bind mounts for persistent data. */
   volumes: VolumeMount[];
+  /**
+   * Container paths mounted as an EMPTY tmpfs on every start (`docker run
+   * --tmpfs`), hiding whatever the image baked there. For state the image ships
+   * stale and that only breaks when stale: Valheim's build-time SteamCMD
+   * app-info cache (`/home/valheim/Steam/appcache`) makes the first
+   * `app_update` of every fresh container fail with "Missing configuration";
+   * an empty cache is refetched in seconds and works first time. Nothing here
+   * persists — that's the point.
+   */
+  tmpfs?: string[];
   /** Path holding world saves (relative to the data volume mount). */
   savePath: string;
   /**
@@ -368,6 +387,16 @@ export interface EnvMap {
 export interface VolumeMount {
   hostPath: string;
   containerPath: string;
+  /**
+   * Copy the image's own contents at `containerPath` into `hostPath` the first
+   * time the host dir is empty, so a bind mount can persist something the image
+   * SHIPS (a bind mount over a populated image dir otherwise hides it — Docker
+   * seeds named volumes from the image, never bind mounts). Use it for a tool
+   * the image bundles but that updates itself at runtime, e.g. Valheim's
+   * `/opt/steamcmd`: persisting it means SteamCMD self-updates once, not on
+   * every boot. Never set it on the data volume (the LAST entry).
+   */
+  seedFromImage?: boolean;
 }
 
 export interface PortRange {

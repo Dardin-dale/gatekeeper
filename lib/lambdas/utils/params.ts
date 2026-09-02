@@ -238,8 +238,10 @@ export interface BootPhaseStatus {
   emoji: string;
   /** 0-100 for phases that expose one (e.g. a SteamCMD download); absent otherwise. */
   progress?: number;
-  /** True when the boot cannot succeed — surfaced as an error, not a "please wait". */
+  /** True when the boot won't recover within normal patience — surfaced as an error, not a "please wait". */
   failure: boolean;
+  /** Game-specific advice for a failure (BootPhase.hint), rendered under the label. */
+  hint?: string;
   /** Epoch seconds this phase was first observed, for "… for 4m" rendering. */
   at?: number;
 }
@@ -262,6 +264,7 @@ export async function getBootPhase(): Promise<BootPhaseStatus | null> {
       emoji: String(p.emoji || "⏳"),
       progress: typeof p.progress === "number" ? p.progress : undefined,
       failure: p.failure === true,
+      hint: typeof p.hint === "string" && p.hint ? p.hint : undefined,
       at: typeof p.at === "number" ? p.at : undefined,
     };
   } catch {

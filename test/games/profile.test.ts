@@ -99,3 +99,52 @@ describe('mods spec', () => {
     expect(runtimeProfile(unmodded).modKinds).toEqual({});
   });
 });
+
+describe('volumes', () => {
+  it('the data root (last mount) is never a seeded image dir', () => {
+    // Backup/restore/adminFile all key off volumes[-1] as the data root; a
+    // seeded cache there would land in every S3 tar.
+    for (const p of Object.values(GAME_PROFILES)) {
+      const last = p.container.volumes[p.container.volumes.length - 1];
+      expect({ game: p.id, seeded: last.seedFromImage ?? false }).toEqual({ game: p.id, seeded: false });
+      expect(last.hostPath.startsWith('/mnt/game-data/')).toBe(true);
+    }
+  });
+
+  it('valheim persists SteamCMD (seeded from the image) and the server install outside the data root', () => {
+    const v = valheim.container.volumes;
+    expect(v[v.length - 1]).toEqual({ hostPath: '/mnt/game-data/config', containerPath: '/config' });
+    expect(v.find((m) => m.containerPath === '/opt/steamcmd')).toMatchObject({
+      hostPath: '/mnt/game-data/steamcmd',
+      seedFromImage: true,
+    });
+    expect(v.find((m) => m.containerPath === '/opt/valheim')?.seedFromImage).toBeUndefined();
+    // runtimeProfile passes the flag through untouched for start-server.sh's jq.
+    expect(runtimeProfile(valheim).volumes).toBe(v);
+  });
+
+  it("valheim hides the image's stale SteamCMD app-info cache behind an empty tmpfs (the Missing-configuration fix)", () => {
+    expect(valheim.container.tmpfs).toEqual(['/home/valheim/Steam/appcache']);
+    expect(runtimeProfile(valheim).tmpfs).toEqual(['/home/valheim/Steam/appcache']);
+    expect(runtimeProfile(abioticFactor).tmpfs).toEqual([]);
+  });
+});
+
+describe('boot phases', () => {
+  it('every failure phase says what fixes it (hint), since the generic advice differs per game', () => {
+    for (const p of Object.values(GAME_PROFILES)) {
+      for (const phase of p.bootPhases ?? []) {
+        if (!phase.failure) continue;
+        expect({ game: p.id, phase: phase.id, hint: phase.hint }).toMatchObject({
+          hint: expect.stringMatching(/\S/),
+        });
+      }
+    }
+  });
+
+  it("valheim's update-failed hint does not send people to Restart as the first move", () => {
+    const failed = valheim.bootPhases!.find((b) => b.id === 'update-failed')!;
+    expect(failed.hint).toMatch(/quarter-hour/);
+    expect(failed.hint!.indexOf('retries the update on its own')).toBeLessThan(failed.hint!.indexOf('Restart'));
+  });
+});

@@ -7,9 +7,14 @@
 # code is minted. Add `-crossplay` via VH_ARGS to see the PlayFab path instead:
 #   VH_ARGS="-crossplay" docker compose -f docker-compose.valheim.local.yml up
 #
-# First boot is SLOW: SteamCMD downloads the server (app 896660, ~1 GB) into
-# ./local/server/valheim/config (gitignored). Worlds persist under
-# ./local/server/valheim/config/worlds_local.
+# First boot is SLOW: SteamCMD downloads the server (app 896660, ~1.75 GB).
+# Worlds persist under ./local/server/valheim/config/worlds_local (gitignored).
+# /opt/steamcmd and /opt/valheim persist in named volumes, mirroring the EC2
+# profile's seeded bind mounts (Docker seeds a NAMED volume from the image, which
+# is what the host's `seedFromImage` copy step emulates for a bind mount) — so
+# SteamCMD self-updates once and later boots skip the 1.75 GB download. The
+# tmpfs hides the image's stale build-time SteamCMD app-info cache, which makes
+# the first app_update of a fresh container fail with "Missing configuration".
 #
 # Validate once it's up (in another terminal):
 #   node scripts/game/a2s-query.js 127.0.0.1 2457
@@ -30,5 +35,13 @@ services:
     ports:
       - "2456-2458:2456-2458/udp"
     volumes:
+      - valheim-steamcmd:/opt/steamcmd
+      - valheim-gamefiles:/opt/valheim
       - ./local/server/valheim/config:/config
+    tmpfs:
+      - /home/valheim/Steam/appcache
     restart: "no"
+
+volumes:
+  valheim-steamcmd:
+  valheim-gamefiles:

@@ -229,10 +229,28 @@ if [ "$QUERY_COVERED" = "0" ]; then
 fi
 
 # Volumes: persistent data bind mounts (host dirs live on the RETAIN'd EBS).
-while IFS=$'\t' read -r host cont; do
+while IFS=$'\t' read -r host cont seed; do
   mkdir -p "$host"
+  # seedFromImage: a bind mount HIDES whatever the image ships at that path
+  # (Docker only seeds named volumes), so on first use copy the image's own
+  # contents into the empty host dir. Persists self-updating tooling the image
+  # bundles — Valheim's /opt/steamcmd — so it updates once, not every boot.
+  if [ "$seed" = "true" ] && [ -z "$(ls -A "$host" 2>/dev/null)" ]; then
+    echo "Seeding $host from image path $cont..."
+    if ! docker run --rm --entrypoint sh -v "${host}:/__seed" "$IMAGE" \
+        -c "cp -a '${cont}/.' /__seed/"; then
+      echo "ERROR: failed to seed $host from $IMAGE:$cont"
+      exit 1
+    fi
+  fi
   VOL_ARGS+=( -v "${host}:${cont}" )
-done < <(jq -r '.volumes[] | [.hostPath, .containerPath] | @tsv' "$PROFILE")
+done < <(jq -r '.volumes[] | [.hostPath, .containerPath, (.seedFromImage // false)] | @tsv' "$PROFILE")
+
+# tmpfs: an EMPTY mount over state the image bakes in stale (Valheim's build-time
+# SteamCMD app-info cache breaks the first app_update of every fresh container).
+while IFS= read -r tpath; do
+  [ -n "$tpath" ] && VOL_ARGS+=( --tmpfs "$tpath" )
+done < <(jq -r '.tmpfs // [] | .[]' "$PROFILE")
 
 # --- Launch ----------------------------------------------------------------
 # --restart unless-stopped covers the transient first-boot SteamCMD

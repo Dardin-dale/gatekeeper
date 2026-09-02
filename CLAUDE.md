@@ -60,7 +60,13 @@ lib/games/
 - **Boot visibility**: `GameProfile.bootPhases` name the pre-live stages (updating / verifying /
   loading / **failed**) scraped from container logs, published to SSM `boot-phase` and rendered by
   `/<cmd> status` + the status message. A `failure: true` phase wins over any later phase — a
-  server whose update failed keeps logging later stages while being unjoinable.
+  server whose update failed keeps logging later stages while being unjoinable. A failure phase's
+  `hint` is the per-game fix rendered in Discord (AF: Restart; Valheim: the image retries itself).
+- **Valheim "Missing configuration" boots**: the image bakes a stale SteamCMD app-info cache into
+  `/home/valheim/Steam/appcache`, which makes the first `app_update` of every fresh container fail
+  (the image's 15-min cron retry then succeeds). The profile mounts an empty `tmpfs` there on every
+  start. It also persists `/opt/steamcmd` (`seedFromImage`) + `/opt/valheim` (the 1.75 GB install)
+  on the data volume outside the backup root, so boots skip the self-update and re-download.
 - **Domain (optional)**: set `BASE_DOMAIN` → each game gets `<subdomain>.<BASE_DOMAIN>` (e.g.
   `abiotic.gjurdsihop.net`) in one shared Route 53 zone, updated to the instance IP on start.
 
