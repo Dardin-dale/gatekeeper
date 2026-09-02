@@ -199,6 +199,11 @@ function handleEC2StoppedEvent(_detail: any, worldName?: string): any {
     username: persona.characterName,
     ...(personaAvatarUrl ? { avatar_url: personaAvatarUrl } : {}),
     components: [], // drop the live-control buttons now that the session is over
+    // Explicit empty content: a webhook edit leaves omitted fields alone, and the
+    // pinned status is edited across sessions — this scrubs any stale text (an
+    // old @starter mention) so the next session doesn't inherit it.
+    content: '',
+    allowed_mentions: { parse: [] },
     embeds: [{
       title: worldName ?? ACTIVE_GAME.displayName,
       description: `🛑 **Offline** · ${persona.lines?.offline ?? 'The server has shut down completely.'}\n` +

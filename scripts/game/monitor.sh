@@ -88,7 +88,7 @@ SERVER_LIVE_PARAM="/gatekeeper/${GAME_ID}/server-live"
 BOOT_PHASE_PARAM="/gatekeeper/${GAME_ID}/boot-phase"       # JSON of the current pre-live stage; 'none' once live
 PINNED_STATUS_PREFIX="/gatekeeper/${GAME_ID}/pinned-status" # per-guild durable pinned message: {messageId,channelId}
 BOT_TOKEN_PARAM="/gatekeeper/${GAME_ID}/discord-bot-token"  # SecureString; the pin API needs a bot, webhooks can't pin
-SESSION_STARTER_PARAM="/gatekeeper/${GAME_ID}/session-starter" # who ran /<cmd> start, pinged when a boot fails
+SESSION_STARTER_PARAM="/gatekeeper/${GAME_ID}/session-starter" # who ran /<cmd> start, pinged by the doorbell posts (ready / boot failed)
 SESSION_PRIVATE_PARAM="/gatekeeper/${GAME_ID}/session-private" # 'true' = quiet session: skip the public online ping
 STATUS_MSG_PARAM="/gatekeeper/${GAME_ID}/status-message-id"    # readiness message id; the offline lambda edits it in place
 EXTEND_MINUTES_PARAM="/gatekeeper/${GAME_ID}/extend-minutes"   # Extend button: minutes of idle grace per press ('off' = disabled)
@@ -166,19 +166,20 @@ notify_enabled() { # $1 = category
 }
 
 # Build the webhook payload with jq so name/avatar/text are safely JSON-escaped.
-# $5 (components) is always emitted — pass [] to explicitly CLEAR buttons on an
-# edit (a webhook message-edit leaves omitted fields unchanged, so [] is required
-# to remove them at winding-down/offline).
-build_payload() { # $1=title $2=description $3=color $4=fields JSON $5=components JSON $6=optional content (pings)
+# $5 (components) and content are ALWAYS emitted — a webhook message-edit leaves
+# omitted fields unchanged, so [] / "" are required to actually clear buttons and
+# any leftover text on an edit. Content on the status message is a plain line
+# only, never a mention: the pinned dashboard is edited across sessions, so a
+# ping written into it would keep showing that user long after their session
+# (the "@previous starter" bug). Pings go on the separate doorbell posts
+# (post_ready_ping), which are their own messages.
+build_payload() { # $1=title $2=description $3=color $4=fields JSON $5=components JSON $6=optional content (no pings)
   jq -n --arg name "$PERSONA_NAME" --arg icon "$PERSONA_ICON" --arg thumb "$PERSONA_THUMB" \
     --arg footer "$PERSONA_FOOTER" \
     --arg title "$1" --arg desc "$2" --argjson color "$3" --argjson fields "${4:-[]}" \
     --argjson components "${5:-[]}" --arg content "${6:-}" \
-    '{username: $name, embeds: [{title: $title, description: $desc, color: $color}], components: $components}
-     | if $content != "" then .content = $content
-         | .allowed_mentions = {parse: (if ($content | test("@here|@everyone")) then ["everyone"] else [] end),
-                                users: ([$content | scan("<@!?([0-9]+)>")] | flatten)}
-       else . end
+    '{username: $name, content: $content, embeds: [{title: $title, description: $desc, color: $color}],
+      components: $components, allowed_mentions: {parse: []}}
      | if $desc == "" then .embeds[0] |= del(.description) else . end
      | if $footer != "" then .embeds[0].footer = {text: $footer} else . end
      | if ($fields | length) > 0 then .embeds[0].fields = $fields else . end
@@ -229,10 +230,12 @@ extend_active() {
   if [ "$until" -gt "$now_ms" ]; then echo "yes"; else echo "no"; fi
 }
 
-# The readiness doorbell. The pinned dashboard is EDITED in place, and edits
-# never fire a Discord notification — so a session could come up silently and
-# idle-stop before anyone looks. This separate content-only post is the "it's
-# ready" alert, mentioning whoever ran `start` (they're the one waiting).
+# The doorbell (readiness, or a failed boot). The pinned dashboard is EDITED in
+# place, and edits never fire a Discord notification — so a session could come up
+# silently and idle-stop before anyone looks. This separate content-only post is
+# the alert, mentioning whoever ran `start` (they're the one waiting). It is the
+# ONLY place the starter is mentioned: a ping on the pinned message itself would
+# persist through every later edit and misattribute the next session.
 # Content-only on purpose: it reads as a doorbell, not a second dashboard.
 post_ready_ping() { # $1 = message text
   local url starter ping payload
@@ -724,12 +727,14 @@ $DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
           # NOT stop the instance: the box may still serve an older build, so
           # teardown stays the operator's call with boot-timeout as the backstop.
           # Ping whoever ran `start` — a failure nobody sees is the whole problem.
-          STARTER=$(aws ssm get-parameter --name "$SESSION_STARTER_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "none")
-          PING=""
-          case "$STARTER" in ''|none|None) ;; here) PING="@here" ;; *) PING="<@${STARTER}>" ;; esac
-          status_upsert "$(world_title)" "${PHASE_LINE}
+          # The ping is a separate doorbell post, NOT content on the pinned
+          # message: that message is edited across sessions and would carry the
+          # mention forever.
+          WTITLE_FAILED="$(world_title)"
+          status_upsert "$WTITLE_FAILED" "${PHASE_LINE}
 
-The server came up, but its game files are out of date — clients will be turned away with a version error. **Restart** re-runs the update; if it fails again the files need a manual reinstall. Use \`${SLASH_CMD} stop\` if you'd rather shut it down." 15158332 "[]" "[{\"type\":1,\"components\":[${BTN_RESTART},${BTN_STOP}]}]" "$PING"
+The server came up, but its game files are out of date — clients will be turned away with a version error. **Restart** re-runs the update; if it fails again the files need a manual reinstall. Use \`${SLASH_CMD} stop\` if you'd rather shut it down." 15158332 "[]" "[{\"type\":1,\"components\":[${BTN_RESTART},${BTN_STOP}]}]"
+          post_ready_ping "⚠️ **$WTITLE_FAILED** failed to update — it's up but unjoinable. Hit **Restart** on the pinned status, or \`${SLASH_CMD} stop\`."
         else
           status_upsert "$(world_title)" "${PHASE_LINE}
 

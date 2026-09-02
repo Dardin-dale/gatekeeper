@@ -149,6 +149,7 @@ describe('Discord Notifications Lambda', () => {
       expect(body.embeds[0].description).toContain('Offline');
       expect(body.embeds[0].color).toBe(0x95a5a6);
       expect(body.components).toEqual([]);
+      expect(body.content).toBe('');
     });
 
     test('ignores non-stopped EC2 state changes', async () => {
