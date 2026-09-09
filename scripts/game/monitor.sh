@@ -71,6 +71,13 @@ EVENT_WINDOW="300s"
 # Pre-live boot stages (see GameProfile.bootPhases): {id,pattern,label,emoji?,
 # progressPattern?,failure?}, matched against the full container log.
 BOOT_PHASES_JSON=$(jq -c '.bootPhases // []' "$PROFILE")
+# Patch-day self-heal (GameProfile.container.updateRepair): the image's "update
+# failed, using the existing install" line, the SteamCMD bookkeeping to move
+# aside, and how to re-poke the updater. Empty pattern = no repair for this game.
+UPDATE_REPAIR_PATTERN=$(jq -r '.updateRepair.pattern // empty' "$PROFILE")
+UPDATE_REPAIR_PATHS=$(jq -r '.updateRepair.stalePaths // [] | .[]' "$PROFILE")
+UPDATE_REPAIR_CMD=$(jq -r '.updateRepair.retrigger // empty' "$PROFILE")
+UPDATE_REPAIR_STATE=/tmp/gk_update_repair # "<container-id> <matches-acted-on> <epoch>"
 BOOT_PHASE_COUNT=$(echo "$BOOT_PHASES_JSON" | jq 'length')
 # Join port + hint for the readiness embed (mirrors /gate join + status). Port
 # falls back to the first game port; hint is the game's connect instructions.
@@ -381,6 +388,57 @@ status_upsert() { # same args as post_status (incl. optional $6 content)
   fi
   create_pinned_status "$@" && return 0
   edit_status "$@" || post_status "$@"
+}
+
+# Patch-day self-heal. When the image's updater gives up and serves the previous
+# build (Valheim 1.0 day: Steam refused the delta update of the persisted install
+# for 50+ min while a FRESH install of the same build from the same host went
+# through), Discord says Online but every updated client is rejected with
+# "Incompatible version". The proven fix is what the operator did by hand: move
+# SteamCMD's per-install bookkeeping (steamapps/: app manifest + partial-download
+# dirs) aside inside the container and re-poke the updater, which then validates
+# the install as fresh — unchanged files are kept, only the delta downloads — and
+# the image restarts the server on the new build (it only updates with 0
+# players, so a HUP never kicks anyone). Fires on a NEW failure line only
+# (count keyed to the container id, so a Restart's fresh log starts clean) and at
+# most once per 30 min, so a real Steam outage can't spin it.
+repair_stale_update() {
+  [ -z "$UPDATE_REPAIR_PATTERN" ] && return 0
+  local cid logs count last_cid="" last_count=0 last_at=0 p
+  cid=$(docker inspect -f '{{.Id}}' "$CONTAINER_NAME" 2>/dev/null) || return 0
+  logs=$(docker logs "$CONTAINER_NAME" 2>&1) || return 0
+  count=$(echo "$logs" | grep -cE "$UPDATE_REPAIR_PATTERN")
+  [ "$count" -eq 0 ] && return 0
+  [ -f "$UPDATE_REPAIR_STATE" ] && read -r last_cid last_count last_at < "$UPDATE_REPAIR_STATE"
+  if [ "$last_cid" = "$cid" ]; then
+    [ "$count" -le "$last_count" ] && return 0   # nothing new since the last repair
+    if [ $((NOW - last_at)) -lt 1800 ]; then      # still inside the cool-down
+      log "Update fell back to the previous build again ($count total) — last repair $(( (NOW - last_at) / 60 ))m ago, holding off"
+      return 0
+    fi
+  fi
+  log "Update fell back to the previous build ($count failure line(s)) — clearing SteamCMD's stale install bookkeeping and re-running the update"
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    if docker exec "$CONTAINER_NAME" sh -c "[ -e '$p' ] && rm -rf '$p.stale' && mv '$p' '$p.stale'"; then
+      log "  moved $p -> $p.stale"
+    else
+      log "  $p absent or could not be moved (continuing)"
+    fi
+  done <<< "$UPDATE_REPAIR_PATHS"
+  if [ -n "$UPDATE_REPAIR_CMD" ]; then
+    if docker exec "$CONTAINER_NAME" sh -c "$UPDATE_REPAIR_CMD"; then
+      log "  updater re-triggered"
+    else
+      log "  WARNING: re-trigger failed ($UPDATE_REPAIR_CMD)"
+    fi
+  fi
+  echo "$cid $count $NOW" > "$UPDATE_REPAIR_STATE"
+  local priv
+  priv=$(aws ssm get-parameter --name "$SESSION_PRIVATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
+  if [ "$priv" != "true" ] && notify_enabled boot; then
+    post_discord "🔧 Game update didn't apply — repairing" "The server came up on its **previous build** because Steam refused the in-place update (a patch-day quirk). Cleared the stale update bookkeeping and re-ran the update — the server restarts on the new build in a few minutes. Anyone seeing *Incompatible version* should retry after that." 16766720
+  fi
 }
 
 # Echo the current pre-live stage as compact JSON, or return 1 if none matches.
@@ -702,6 +760,11 @@ $DESC" 3776160 "$JOIN_FIELDS" "$BTNS"
       fi
     fi
   fi
+
+  # --- Patch-day self-heal: a failed in-place update that fell back to the old
+  #     build gets its stale SteamCMD bookkeeping cleared + the updater re-run.
+  #     Pre- AND post-live: the image's cron retries mid-session too. ---
+  repair_stale_update
 
   # --- Flavor events -> Discord (deaths, raids, joins; deduped, gated by toggle) ---
   scan_events

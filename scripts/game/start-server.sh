@@ -252,6 +252,37 @@ while IFS= read -r tpath; do
   [ -n "$tpath" ] && VOL_ARGS+=( --tmpfs "$tpath" )
 done < <(jq -r '.tmpfs // [] | .[]' "$PROFILE")
 
+# --- Force-update: clear SteamCMD's per-install bookkeeping before launch -----
+# SSM force-update=true (set by `/<cmd> start update`, the failed-boot Restart
+# button, or `cli config set force-update on`) asks THIS boot to make the image
+# re-validate the game files as a fresh install instead of a delta update — the
+# fix for a patch-day "Incompatible version" where Steam refuses the delta (see
+# GameProfile.container.updateRepair; the monitor does the same live). The paths
+# are container paths; translate through the profile's volume mounts to act on
+# the host BEFORE the container exists. Consumed here (reset to false) so it
+# applies to exactly one boot.
+FORCE_UPDATE_PARAM="/gatekeeper/${GAME_ID}/force-update"
+FORCE_UPDATE=$(aws ssm get-parameter --name "$FORCE_UPDATE_PARAM" --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "false")
+if [ "$FORCE_UPDATE" = "true" ]; then
+  echo "force-update requested: clearing stale update bookkeeping before launch"
+  while IFS= read -r cpath; do
+    [ -z "$cpath" ] && continue
+    hpath=$(jq -r --arg p "$cpath" '
+      [.volumes[] | select(.containerPath as $c | $p == $c or ($p | startswith($c + "/")))]
+      | sort_by(.containerPath | length) | last // empty
+      | . as $m | $m.hostPath + $p[($m.containerPath | length):]' "$PROFILE")
+    if [ -z "$hpath" ]; then
+      echo "  WARNING: $cpath is not under a declared volume; skipping"
+    elif [ -e "$hpath" ]; then
+      rm -rf "${hpath}.stale" && mv "$hpath" "${hpath}.stale" && echo "  moved $hpath -> ${hpath}.stale"
+    else
+      echo "  $hpath not present (nothing to clear)"
+    fi
+  done < <(jq -r '.updateRepair.stalePaths // [] | .[]' "$PROFILE")
+  aws ssm put-parameter --name "$FORCE_UPDATE_PARAM" --value "false" --type String --overwrite --region "$REGION" > /dev/null \
+    || echo "  WARNING: could not reset $FORCE_UPDATE_PARAM"
+fi
+
 # --- Launch ----------------------------------------------------------------
 # --restart unless-stopped covers the transient first-boot SteamCMD
 # "Missing configuration" exit (validated locally: a re-run pulls cleanly).

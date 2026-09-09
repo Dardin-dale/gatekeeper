@@ -22,6 +22,11 @@ const KNOBS = {
   'boot-timeout': { param: 'boot-timeout-minutes', def: '45', label: 'Boot-timeout', unit: 'min' },
   'message-ttl': { param: 'message-ttl-hours', def: '16', label: 'Status message TTL', unit: 'h' },
   'extend': { param: 'extend-minutes', def: '5', label: 'Idle extend window', unit: 'min' },
+  // One-shot switch, not a timer: 'on' makes the NEXT boot clear SteamCMD's
+  // per-install bookkeeping so the image re-validates the game files as a fresh
+  // install (the patch-day "Incompatible version" fix). The host resets it to
+  // off once that boot has consumed it. Same as `/<cmd> start update:True`.
+  'force-update': { param: 'force-update', def: 'false', label: 'Force clean update (next boot)', unit: '', toggle: true },
 };
 
 function paramName(suffix) {
@@ -46,16 +51,30 @@ function normalizeValue(raw) {
   throw new Error(`Invalid value "${raw}" — expected a positive whole number, or "off".`);
 }
 
+// Toggle knobs (force-update) take on/off (or true/false) and store 'true'/'false'.
+function normalizeToggle(raw) {
+  const v = String(raw).trim().toLowerCase();
+  if (v === 'on' || v === 'true' || v === 'yes') return 'true';
+  if (v === 'off' || v === 'false' || v === 'no') return 'false';
+  throw new Error(`Invalid value "${raw}" — expected "on" or "off".`);
+}
+
 async function show() {
   const ssm = new SSMClient({ region: REGION });
   console.log(`Runtime config for ${GAME_ID}:`);
-  for (const [key, { param, def, label, unit }] of Object.entries(KNOBS)) {
+  for (const [key, { param, def, label, unit, toggle }] of Object.entries(KNOBS)) {
     const val = await getParam(ssm, param);
+    if (toggle) {
+      const on = val === 'true';
+      console.log(`  ${key.padEnd(14)} ${label.padEnd(30)} ${on ? 'on (applies to the next boot)' : 'off'}`);
+      continue;
+    }
     const shown = val === undefined ? `${def} (default — param unset)` : val;
     const human = val === 'off' || val === 'disabled' ? ' → disabled' : (/^\d+$/.test(val || def) ? ` ${unit}` : '');
-    console.log(`  ${key.padEnd(14)} ${label.padEnd(22)} ${shown}${val === undefined ? '' : human}`);
+    console.log(`  ${key.padEnd(14)} ${label.padEnd(30)} ${shown}${val === undefined ? '' : human}`);
   }
-  console.log(`\nChange with: npm run cli config set <auto-shutdown|boot-timeout|message-ttl> <number|off>`);
+  console.log(`\nChange with: npm run cli config set <auto-shutdown|boot-timeout|message-ttl|extend> <number|off>`);
+  console.log(`             npm run cli config set force-update <on|off>   (clean game update on the next boot)`);
 }
 
 async function set(key, value) {
@@ -66,7 +85,7 @@ async function set(key, value) {
   if (value === undefined) {
     throw new Error(`Missing value. Usage: npm run cli config set ${key} <number|off>`);
   }
-  const normalized = normalizeValue(value);
+  const normalized = knob.toggle ? normalizeToggle(value) : normalizeValue(value);
   const ssm = new SSMClient({ region: REGION });
   const name = paramName(knob.param);
   await ssm.send(new PutParameterCommand({
@@ -75,6 +94,13 @@ async function set(key, value) {
     Type: 'String',
     Overwrite: true,
   }));
+  if (knob.toggle) {
+    console.log(`Set ${name} = ${normalized}.`);
+    console.log(normalized === 'true'
+      ? 'The next boot clears the stale SteamCMD bookkeeping and re-validates the game files (a few extra minutes), then resets this to off.'
+      : 'The next boot updates normally.');
+    return;
+  }
   const effect = normalized === 'off' || normalized === 'disabled' ? 'disabled' : `${normalized} ${knob.unit}`;
   console.log(`Set ${name} = ${normalized} (${knob.label.toLowerCase()} → ${effect}).`);
   console.log('Read live: the host re-reads timers each monitor cycle; message-ttl applies to the next session.');

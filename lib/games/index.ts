@@ -53,6 +53,11 @@ export function runtimeProfile(profile: GameProfile = ACTIVE_GAME) {
     defaultArgs: profile.container.defaultArgs ?? '',
     // Host-rendered admin list for images with no admin env var (see types.ts).
     adminFile: profile.container.adminFile ?? null,
+    // Patch-day self-heal: the "update failed, using the old build" log signature,
+    // the SteamCMD bookkeeping to move aside, and how to re-poke the updater.
+    // The monitor repairs on a new match; start-server.sh clears the same paths
+    // on the host for a force-update boot. null = no known repair for this image.
+    updateRepair: profile.container.updateRepair ?? null,
     ports: profile.ports,
     queryPort: profile.queryPort,
     // ERE for the per-session lobby/join code in container logs (empty = none).

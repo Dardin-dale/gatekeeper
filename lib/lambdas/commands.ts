@@ -152,7 +152,8 @@ export async function handler(
         case "start": {
           const worldName = subOptions?.find((o: any) => o.name === "world")?.value;
           const isPrivate = subOptions?.find((o: any) => o.name === "private")?.value || false;
-          return await handleStartCommand(worldName, guild_id, isPrivate, body);
+          const forceUpdate = subOptions?.find((o: any) => o.name === "update")?.value || false;
+          return await handleStartCommand(worldName, guild_id, isPrivate, body, forceUpdate);
         }
         case "stop": {
           const force = subOptions?.find((o: any) => o.name === "force")?.value || false;

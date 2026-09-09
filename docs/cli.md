@@ -45,6 +45,7 @@ npm run cli discord put-token                # seed the bot token to SSM (presen
 npm run cli config show                      # show runtime tunables (idle/boot timers)
 npm run cli config set auto-shutdown <min>   # retune the idle auto-shutdown window live
 npm run cli config set boot-timeout <min>    # retune the boot-timeout safety net live
+npm run cli config set force-update on       # clean game update on the NEXT boot (patch-day "Incompatible version")
 npm run cli config reconstruct [--env]       # rebuild gitignored config/ (+ .env) from the live deploy
 ```
 
@@ -103,6 +104,12 @@ npm run cli config reconstruct [--env]       # rebuild gitignored config/ (+ .en
   SSM param live — no redeploy, no restart; the monitor picks it up within ~one cycle. A subsequent
   deploy only re-asserts the value when the profile/env default itself changes, so a CLI override
   survives ordinary deploys. Pass `off` (or `disabled`) to turn a guard off.
+  `config set force-update on` is a one-shot switch, not a timer: the next boot moves SteamCMD's
+  per-install bookkeeping (`GameProfile.container.updateRepair.stalePaths`) aside before the
+  container launches, so the image re-validates the game files as a fresh install instead of the
+  delta update Steam refuses on a patch day; the host resets it to `off` once consumed. Same effect
+  as `/<cmd> start update:True` or the failed-boot **Restart** button. The monitor also does this on
+  its own when it sees the image fall back to the previous build.
 - **`config reconstruct`** — the recovery path for a fresh machine that never got a copy of the
   gitignored config. Reads the **deployed CloudFormation template** (one read-only `GetTemplate`) and
   rebuilds `config/<game>.worlds.json` and `config/<game>.discord.json` from the Lambda env baked into

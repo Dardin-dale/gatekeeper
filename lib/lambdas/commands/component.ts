@@ -117,6 +117,17 @@ export async function handleComponentInteraction(body: any): Promise<APIGatewayP
  */
 async function handleRestartButton(): Promise<APIGatewayProxyResult> {
   try {
+    // A restart exists to re-run a failed update, so make it a CLEAN one: the
+    // host start script clears SteamCMD's per-install bookkeeping (the delta
+    // update Steam refuses on patch day) before the container launches, and
+    // the image re-validates the game files as a fresh install. Best-effort —
+    // a plain restart is still better than none.
+    await withRetry(() => ssmClient.send(new PutParameterCommand({
+      Name: SSM_PARAMS.FORCE_UPDATE,
+      Value: "true",
+      Type: "String",
+      Overwrite: true,
+    }))).catch((err) => console.error("Could not flag force-update for the restart:", err));
     await withRetry(() => ssmClient.send(new SendCommandCommand({
       DocumentName: "AWS-RunShellScript",
       InstanceIds: [SERVER_INSTANCE_ID],
@@ -131,7 +142,7 @@ async function handleRestartButton(): Promise<APIGatewayProxyResult> {
     );
   }
   return ephemeralAck(
-    "🔄 Restarting the server — it re-runs the game update on the way up. " +
+    "🔄 Restarting the server — it re-runs the game update on the way up (as a clean update this time). " +
     "Progress posts to the status message; it usually takes a few minutes.",
   );
 }

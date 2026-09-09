@@ -365,6 +365,43 @@ export interface ContainerSpec {
    * ADMINLIST_IDS) use `envMap.adminIds` and omit this.
    */
   adminFile?: AdminFileSpec;
+  /**
+   * Self-heal for an in-place game update that Steam refuses while the image
+   * falls back to the previous build — the server comes up "online" but every
+   * updated client is turned away with "Incompatible version". Seen on Valheim's
+   * 1.0 patch day (2026-09-09): the persisted install's SteamCMD bookkeeping
+   * (`steamapps/`: app manifest + partial-download dirs) made every delta update
+   * fail with "Failed to get manifest request code, 'Access Denied'" while a
+   * fresh install of the same build succeeded from the same host. The host
+   * monitor watches the container log for `pattern`; on a NEW match it moves
+   * each of `stalePaths` aside inside the container and runs `retrigger`, so
+   * SteamCMD re-validates the install as fresh (the unchanged files are kept,
+   * only the delta downloads). The same paths are cleared on the HOST before
+   * launch when a boot is started with force-update (`/<cmd> start update`,
+   * the Restart button, `cli config set force-update on`). Omit for images
+   * without a known equivalent.
+   */
+  updateRepair?: UpdateRepair;
+}
+
+export interface UpdateRepair {
+  /**
+   * ERE matched against the container log: the image's "update failed, using
+   * the existing install" line. Must be logged ONCE PER ATTEMPT (boot + every
+   * cron retry) — the monitor repairs when the match count grows, never on a
+   * line it has already acted on.
+   */
+  pattern: string;
+  /**
+   * CONTAINER paths of the per-install Steam bookkeeping to move aside
+   * (renamed `<path>.stale`, replacing any previous copy). Each must sit under
+   * a declared `volumes` mount so the host can also clear it pre-launch for a
+   * force-update; never the game files themselves — a fresh install is denied
+   * at the same gate and the image would lose its old-build fallback.
+   */
+  stalePaths: string[];
+  /** Shell run inside the container (`sh -c`) to re-run the image's updater now. */
+  retrigger: string;
 }
 
 export interface AdminFileSpec {

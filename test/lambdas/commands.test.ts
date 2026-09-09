@@ -380,6 +380,42 @@ describe('Commands Lambda', () => {
       expect(wrote[0].input.Value).toBe('false');
     });
 
+    test('start update:True flags force-update=true for the host start script', async () => {
+      getMockGetFastServerStatus().mockResolvedValue({ status: 'stopped' });
+      getMockSsmSend().mockReset();
+      getMockSsmSend().mockResolvedValue({});
+      const event = createDiscordEvent({
+        type: 2,
+        data: { name: 'gate', options: [{ name: 'start', options: [{ name: 'update', value: true }] }] },
+      });
+      const result = await handler(event, mockContext);
+
+      const body = JSON.parse(result.body);
+      expect(body.data.embeds[0].description).toContain('Clean update requested');
+      const wrote = getMockSsmSend().mock.calls.find(
+        (c: any) => c[0]?.input?.Name?.includes('force-update'),
+      );
+      expect(wrote[0].input.Value).toBe('true');
+    });
+
+    test('a plain start never touches force-update (a CLI-set flag must survive until the boot consumes it)', async () => {
+      getMockGetFastServerStatus().mockResolvedValue({ status: 'stopped' });
+      getMockSsmSend().mockReset();
+      getMockSsmSend().mockResolvedValue({});
+      const event = createDiscordEvent({
+        type: 2,
+        data: { name: 'gate', options: [{ name: 'start', options: [] }] },
+      });
+      const result = await handler(event, mockContext);
+
+      const body = JSON.parse(result.body);
+      expect(body.data.embeds[0].description).not.toContain('Clean update');
+      const wrote = getMockSsmSend().mock.calls.find(
+        (c: any) => c[0]?.input?.Name?.includes('force-update'),
+      );
+      expect(wrote).toBeUndefined();
+    });
+
     test('join replies ephemerally during a private session', async () => {
       getMockGetSessionPrivate().mockResolvedValue(true);
       getMockGetFastServerStatus().mockResolvedValue({ status: 'running', publicIp: '54.0.0.1' });

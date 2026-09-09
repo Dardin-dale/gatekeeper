@@ -21,7 +21,11 @@ Key fields (see `lib/games/types.ts` for the full contract):
   what the image ships at that path into the host dir on first use, for self-updating tooling the
   image bundles such as Valheim's `/opt/steamcmd`), `tmpfs` (container paths mounted empty on
   every start to hide state the image bakes in stale — Valheim's SteamCMD app-info cache),
-  `savePath`, `defaultArgs`.
+  `savePath`, `defaultArgs`, and optionally `updateRepair` (`{ pattern, stalePaths, retrigger }`:
+  the image's "update failed, using the existing install" log line, the SteamCMD bookkeeping to
+  move aside — e.g. Valheim's `/opt/valheim/dl/server/steamapps`, under a declared volume and
+  never the game files — and a shell line that re-runs the image's updater; powers the monitor's
+  patch-day self-heal and `/<cmd> start update:True`).
   Admins: map `envMap.adminIds` if the image takes an admin env var (Valheim's `ADMINLIST_IDS`);
   otherwise set `adminFile` (`{ path, header?, line }`) and the host renders the world's `adminIds`
   into that file on the data volume before each start (AF's `SaveGames/Server/Admin.ini`).

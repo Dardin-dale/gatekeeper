@@ -67,6 +67,17 @@ lib/games/
   (the image's 15-min cron retry then succeeds). The profile mounts an empty `tmpfs` there on every
   start. It also persists `/opt/steamcmd` (`seedFromImage`) + `/opt/valheim` (the 1.75 GB install)
   on the data volume outside the backup root, so boots skip the self-update and re-download.
+- **Patch-day update self-heal**: on Valheim 1.0 day Steam refused the *delta* update of the
+  persisted install for 50+ min (`Failed to get manifest request code, 'Access Denied'`), the image
+  fell back to the old build, and Discord said Online while every updated client got "Incompatible
+  version" — yet a *fresh* install of the same build from the same host succeeded. The wedge was
+  SteamCMD's per-install bookkeeping (`dl/server/steamapps`). `GameProfile.container.updateRepair`
+  names the image's "using the existing version" log line, the paths to move aside, and how to
+  re-poke the updater; the monitor repairs on a NEW match (once per 30 min, keyed to the
+  container) and posts a `boot`-category notice. The same paths are cleared on the host before
+  launch when SSM `force-update=true` (`/<cmd> start update:True`, the Restart button, or
+  `cli config set force-update on`; consumed by `start-server.sh`). Never wipe the game files
+  themselves: a fresh install is denied at the same gate and the old-build fallback is lost.
 - **Domain (optional)**: set `BASE_DOMAIN` → each game gets `<subdomain>.<BASE_DOMAIN>` (e.g.
   `abiotic.gjurdsihop.net`) in one shared Route 53 zone, updated to the instance IP on start.
 
@@ -87,7 +98,7 @@ lib/games/
 
 ## Discord commands (`/gate <sub>`)
 
-`hail` (persona ping) · `start [world] [private]` · `stop [force]` · `status` · `backup`
+`hail` (persona ping) · `start [world] [private] [update]` · `stop [force]` · `status` · `backup`
 (archive without stopping) · `join` · `open` · `worlds` · `mods [world]` ·
 `schedule set|clear|list` · `notify set|list` (toggle host→Discord posts, SSM
 `/gatekeeper/<game>/notify/<category>`) · `config show|set` (owner-only spend timers, gated by

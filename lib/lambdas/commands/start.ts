@@ -34,9 +34,15 @@ import { ACTIVE_GAME } from "../../games";
 import { ownerIds, callerId } from "./util/owner";
 import { dmOwners } from "./util/discord-dm";
 
-export async function handleStartCommand(worldName?: string, guildId?: string, isPrivate = false, interaction?: any): Promise<APIGatewayProxyResult> {
+export async function handleStartCommand(
+  worldName?: string,
+  guildId?: string,
+  isPrivate = false,
+  interaction?: any,
+  forceUpdate = false,
+): Promise<APIGatewayProxyResult> {
   try {
-    console.log(`Starting server command - worldName: ${worldName}, guildId: ${guildId}, private: ${isPrivate}`);
+    console.log(`Starting server command - worldName: ${worldName}, guildId: ${guildId}, private: ${isPrivate}, forceUpdate: ${forceUpdate}`);
 
     // Check current status
     const { status } = await getFastServerStatus();
@@ -195,6 +201,22 @@ export async function handleStartCommand(worldName?: string, guildId?: string, i
       }))
     ).catch((err) => console.log('Could not record session starter:', err));
 
+    // `update:True` — have this boot clear SteamCMD's per-install bookkeeping
+    // so the image re-validates the game files as a fresh install (the fix for
+    // a patch-day "Incompatible version"; see SSM_PARAMS.FORCE_UPDATE). Only
+    // ever written 'true' here: the host consumes it, and a flag set from the
+    // CLI while stopped must survive a plain start.
+    if (forceUpdate) {
+      await withRetry(() =>
+        ssmClient.send(new PutParameterCommand({
+          Name: SSM_PARAMS.FORCE_UPDATE,
+          Value: 'true',
+          Type: 'String',
+          Overwrite: true,
+        }))
+      );
+    }
+
     // Start the instance
     console.log(`Starting EC2 instance: ${SERVER_INSTANCE_ID}`);
     await withRetry(() => ec2Client.send(new StartInstancesCommand({
@@ -236,6 +258,11 @@ export async function handleStartCommand(worldName?: string, guildId?: string, i
       : `${persona.lines?.starting ?? 'The server is powering up.'} ` +
         'First boot can take several minutes while the server provisions.\n\n' +
         'You\'ll get a notification with the join address when it\'s live.';
+    const updateNote = forceUpdate
+      ? '\n\n🔧 **Clean update requested** — this boot re-validates the game files from Steam ' +
+        'instead of patching in place (a few extra minutes). Use it when players see ' +
+        '*Incompatible version* after a game patch.'
+      : '';
 
     return {
       statusCode: 200,
@@ -244,7 +271,7 @@ export async function handleStartCommand(worldName?: string, guildId?: string, i
         data: {
           embeds: [{
             title: isPrivate ? '🚀 Server Starting · 🔒 Private' : '🚀 Server Starting',
-            description,
+            description: description + updateNote,
             color: 0x39a0a0,
             fields: displayWorldName ? [{
               name: '🌍 World',

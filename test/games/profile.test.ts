@@ -128,6 +128,49 @@ describe('volumes', () => {
     expect(runtimeProfile(valheim).tmpfs).toEqual(['/home/valheim/Steam/appcache']);
     expect(runtimeProfile(abioticFactor).tmpfs).toEqual([]);
   });
+
+  describe('patch-day update self-heal (container.updateRepair)', () => {
+    // Verbatim from the 1.0-day container log (2026-09-09 15:00:15 UTC): the
+    // image's updater giving up on the delta update and serving the old build.
+    const FALLBACK_LINE =
+      'Sep  9 15:00:15 supervisord: valheim-updater ERROR - Failed to update Valheim server from Steam - however an existing version was found locally - using it';
+    // The neighbouring lines that must NOT count as a fallback.
+    const NOT_FALLBACK = [
+      "Sep  9 15:00:15 supervisord: valheim-updater Error! App '896660' state is 0x6 after update job.",
+      'Sep  9 15:00:15 supervisord: valheim-updater INFO - Valheim Server is already the latest version',
+      'Sep  9 15:46:45 supervisord: valheim-updater INFO - Valheim Server was updated - restarting',
+    ];
+
+    it('valheim matches the "using the existing version" line and nothing near it', () => {
+      const re = new RegExp(valheim.container.updateRepair!.pattern);
+      expect(re.test(FALLBACK_LINE)).toBe(true);
+      for (const l of NOT_FALLBACK) expect(re.test(l)).toBe(false);
+    });
+
+    it("valheim moves aside only SteamCMD's bookkeeping, never the game files, and re-pokes the updater", () => {
+      const r = valheim.container.updateRepair!;
+      expect(r.stalePaths).toEqual(['/opt/valheim/dl/server/steamapps']);
+      expect(r.retrigger).toContain('kill -HUP');
+    });
+
+    it('every stale path sits under a declared volume so start-server.sh can clear it on the host', () => {
+      for (const p of Object.values(GAME_PROFILES)) {
+        for (const stale of p.container.updateRepair?.stalePaths ?? []) {
+          const mount = p.container.volumes.find(
+            (v) => stale === v.containerPath || stale.startsWith(v.containerPath + '/'),
+          );
+          expect(mount).toBeDefined();
+          // ...and outside the data root (the LAST volume), so the S3 backup never tars it.
+          expect(mount).not.toBe(p.container.volumes[p.container.volumes.length - 1]);
+        }
+      }
+    });
+
+    it('rides game-profile.json as updateRepair (null when a game has no known repair)', () => {
+      expect(runtimeProfile(valheim).updateRepair).toEqual(valheim.container.updateRepair);
+      expect(runtimeProfile(abioticFactor).updateRepair).toBeNull();
+    });
+  });
 });
 
 describe('boot phases', () => {

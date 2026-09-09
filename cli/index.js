@@ -44,7 +44,8 @@ Usage:
   npm run cli discord invite-url             Print this game's install/permission URL
 
   npm run cli config show                     Show runtime tunables (idle/boot timers)
-  npm run cli config set <key> <min|off>      Retune auto-shutdown | boot-timeout live
+  npm run cli config set <key> <min|off>      Retune auto-shutdown | boot-timeout | message-ttl | extend live
+  npm run cli config set force-update on      Clean game update on the next boot (patch-day "Incompatible version")
   npm run cli config reconstruct [--env]      Rebuild gitignored config/ (and .env) from the live deploy
                                              (--force overwrites; safe/read-only against AWS)
 

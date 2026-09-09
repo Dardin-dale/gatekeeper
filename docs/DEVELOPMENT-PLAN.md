@@ -315,6 +315,27 @@ Driven by "I don't want stale messages piling up."
 
 ---
 
+### Phase 15 — Patch-day update self-heal + force-update (built 2026-09-09, deploy pending)
+Valheim 1.0 (2026-09-09): the client updated, the server booted "online" on 0.221.12 and rejected
+everyone with "Incompatible version". Steam refused the persisted install's *delta* update for
+50+ min (`Failed to get manifest request code, 'Access Denied'` in Steam's content_log; the image
+logs `Failed to update Valheim server from Steam - however an existing version was found locally`
+and serves the old build) — yet a *fresh* install of the same build from the same host went
+through. The wedge was SteamCMD's per-install bookkeeping (`dl/server/steamapps`); moving it aside
++ HUP'ing the updater pulled 1.0 in ~2 min and the image restarted the server itself.
+- `GameProfile.container.updateRepair` — `{ pattern, stalePaths, retrigger }`, emitted to
+  `game-profile.json`. Valheim only; AF has no known equivalent yet.
+- `monitor.sh repair_stale_update` — on a NEW fallback line (count keyed to the container id, ≤1
+  per 30 min) `docker exec` moves each stale path to `<path>.stale` and runs the retrigger; posts a
+  `boot`-category "repairing" notice (skipped for private sessions). Pre- and post-live: the
+  image's `*/15` cron retries mid-session too, and only with 0 players, so a HUP never kicks anyone.
+- SSM `force-update` (`SSM_PARAMS.FORCE_UPDATE`): `start-server.sh` translates the container paths
+  through the profile's volumes and clears them on the host pre-launch, then resets the flag. Set by
+  `/<cmd> start update:True` (new BOOLEAN option), the failed-boot **Restart** button (always, a
+  restart exists to re-run the update), and `cli config set force-update on|off`.
+- Not done: a boot phase for the fallback line — it lands seconds before the old build goes live,
+  so it would flash "FAILED" then "Online"; the repair notice is the honest signal instead.
+
 ## Future directions (deferred)
 
 ### Valheim image log-filter event hooks (nicety, not a simplification)

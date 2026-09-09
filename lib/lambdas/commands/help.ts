@@ -18,7 +18,7 @@ export async function handleHelpCommand(): Promise<APIGatewayProxyResult> {
         {
           name: "Server",
           value: [
-            `\`${slash} start [world] [private]\` — start the server (private = quiet session)`,
+            `\`${slash} start [world] [private] [update]\` — start the server (private = quiet session; update = clean game update, for "Incompatible version" after a patch)`,
             `\`${slash} stop [force]\` — stop the server (force skips the backup)`,
             `\`${slash} status\` — current status, world, players`,
             `\`${slash} backup\` — back up the world now (server keeps running)`,

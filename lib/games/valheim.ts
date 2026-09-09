@@ -94,6 +94,21 @@ export const valheim: GameProfile = {
     // ~2 MB, refetched in seconds). Persisting /opt/steamcmd alone did NOT fix
     // it — the self-update restart mid-command was a red herring.
     tmpfs: ['/home/valheim/Steam/appcache'],
+    // Patch-day self-heal (1.0, 2026-09-09): Steam refused the delta update of
+    // the persisted install for 50+ min ("Failed to get manifest request code,
+    // 'Access Denied'" in Steam's content_log; the image logs the line below and
+    // serves the OLD build, so Discord said Online while every 1.0 client got
+    // "Incompatible version"). A fresh install of the same build from the same
+    // host succeeded — the wedge was `dl/server/steamapps` (the Sep-2 app
+    // manifest + leftover downloading/temp dirs). Moving it aside and HUP'ing the
+    // updater (what its */15 cron does) pulled 1.0 in ~2 min and the image
+    // restarted the server itself. The server runs from the rsync'd /opt/valheim
+    // /server copy, so dl/server can be repaired while it's up.
+    updateRepair: {
+      pattern: 'Failed to update Valheim server from Steam - however an existing version was found locally',
+      stalePaths: ['/opt/valheim/dl/server/steamapps'],
+      retrigger: 'kill -HUP "$(cat /var/run/valheim/valheim-updater.pid)"',
+    },
     savePath: 'worlds_local', // /config/worlds_local
     // Exclude all THREE local backup layers that pile up inside the volume — they're
     // cheap in-place rollback, not DR, and archiving them compounds our S3 tar every

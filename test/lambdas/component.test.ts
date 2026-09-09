@@ -2,6 +2,7 @@
 jest.mock('@aws-sdk/client-ssm', () => ({
   GetParameterCommand: jest.fn().mockImplementation((input: any) => ({ input, __type: 'Get' })),
   PutParameterCommand: jest.fn().mockImplementation((input: any) => ({ input, __type: 'Put' })),
+  SendCommandCommand: jest.fn().mockImplementation((input: any) => ({ input, __type: 'Send' })),
 }));
 
 // aws-clients: mock the SSM client; withRetry passes through.
@@ -103,6 +104,32 @@ describe('status-message component dispatch', () => {
     const body = parse(await handleComponentInteraction(click('gk_extend')));
     expect(ssm()).not.toHaveBeenCalled();
     expect(body.data.content).toMatch(/off/i);
+  });
+
+  test('gk_restart flags a clean update, then restarts the game-server unit', async () => {
+    ssm().mockResolvedValue({});
+    const body = parse(await handleComponentInteraction(click('gk_restart')));
+    const calls = ssm().mock.calls.map((c: any) => c[0]);
+    const put = calls.find((c: any) => c.__type === 'Put');
+    const send = calls.find((c: any) => c.__type === 'Send');
+    expect(put.input.Name).toBe('/gatekeeper/abiotic-factor/force-update');
+    expect(put.input.Value).toBe('true');
+    expect(send.input.Parameters.commands).toEqual(['systemctl restart game-server']);
+    // The flag is written BEFORE the restart is dispatched, so the host sees it.
+    expect(calls.indexOf(put)).toBeLessThan(calls.indexOf(send));
+    expect(body.data.flags).toBe(64);
+    expect(body.data.content).toContain('Restarting');
+  });
+
+  test('gk_restart still restarts when the force-update flag cannot be written', async () => {
+    ssm().mockImplementation(async (cmd: any) => {
+      if (cmd.__type === 'Put') throw new Error('ssm down');
+      return {};
+    });
+    const body = parse(await handleComponentInteraction(click('gk_restart')));
+    const send = ssm().mock.calls.map((c: any) => c[0]).find((c: any) => c.__type === 'Send');
+    expect(send).toBeDefined();
+    expect(body.data.content).toContain('Restarting');
   });
 
   test('gk_open delegates to handleOpenCommand with the guild id', async () => {

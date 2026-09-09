@@ -61,6 +61,14 @@ export const SSM_PARAMS = {
   SESSION_PRIVATE: `${SSM_PREFIX}/session-private`, // 'true' for a quiet session: host skips the public online ping, join/status reply privately
   STATUS_MESSAGE_ID: `${SSM_PREFIX}/status-message-id`, // id of this session's readiness message; the offline notification edits it in place ('none' = post fresh)
   EXTEND_UNTIL: `${SSM_PREFIX}/extend-until`, // epoch-ms the host monitor holds off idle-shutdown until ('0'/absent = no grace)
+  // 'true' = the NEXT boot clears SteamCMD's per-install bookkeeping (GameProfile
+  // container.updateRepair.stalePaths) before launch so the image re-validates the
+  // game files as a fresh install — the fix for a patch-day "Incompatible version"
+  // where Steam refuses the delta update. Set by `/<cmd> start update`, the Restart
+  // button and `cli config set force-update on`; CONSUMED (reset to 'false') by the
+  // host start script, never by the stop path — so a flag set while the server is
+  // stopped survives until the boot that honours it. Absent = 'false'.
+  FORCE_UPDATE: `${SSM_PREFIX}/force-update`,
 
   // --- CONFIG namespaces (a key per sub-entry, built by the helpers below) ---
   // Per-category notification toggles: /gatekeeper/<game>/notify/<category> = on|off
